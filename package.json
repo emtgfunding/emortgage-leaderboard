@@ -1,0 +1,20 @@
+{
+  "name": "emortgage-leaderboard",
+  "version": "1.0.0",
+  "description": "eMortgage 200-Point Daily Leaderboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.1",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

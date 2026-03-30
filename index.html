@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>200-Point Leaderboard — eMortgage Funding</title>
+<style>
+  :root {
+    --bg:        #0f1117;
+    --surface:   #1a1d27;
+    --surface2:  #22263a;
+    --border:    rgba(255,255,255,0.08);
+    --text:      #f0f2f8;
+    --muted:     #7b82a0;
+    --green:     #3ecf8e;
+    --green-bg:  rgba(62,207,142,0.12);
+    --amber:     #f5a623;
+    --amber-bg:  rgba(245,166,35,0.12);
+    --red:       #f76f6f;
+    --red-bg:    rgba(247,111,111,0.12);
+    --blue:      #4f8ef7;
+    --gold:      #f5c842;
+    --silver:    #b0b8d0;
+    --bronze:    #cd7f32;
+    --radius:    10px;
+    --radius-sm: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-brand { display: flex; align-items: center; gap: 12px; }
+  .header-logo {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: linear-gradient(135deg, #4f8ef7, #3ecf8e);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; color: #fff; flex-shrink: 0;
+  }
+  .header-title { font-size: 17px; font-weight: 600; color: var(--text); }
+  .header-sub   { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  input[type=date] {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-sm);
+    padding: 6px 10px; font-size: 13px; cursor: pointer;
+  }
+  input[type=date]:focus { outline: none; border-color: var(--blue); }
+
+  .btn {
+    padding: 6px 14px; border-radius: var(--radius-sm); font-size: 13px;
+    cursor: pointer; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text);
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover   { background: var(--surface); border-color: rgba(255,255,255,0.2); }
+  .btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn-primary:hover { background: #3a7de8; }
+  .btn-paused  { border-color: var(--amber); color: var(--amber); }
+
+  /* ── Refresh strip ── */
+  .refresh-strip {
+    display: flex; align-items: center; gap: 20px;
+    padding: 10px 24px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap; gap: 12px;
+  }
+  .rs-item   { display: flex; align-items: center; gap: 8px; }
+  .rs-label  { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .rs-val    { font-size: 12px; font-weight: 500; color: var(--text); min-width: 90px; }
+  .rs-bar-bg { width: 80px; height: 3px; background: var(--border); border-radius: 2px; }
+  .rs-bar-fill { height: 100%; border-radius: 2px; background: var(--blue); transition: width 1s linear; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot-ok       { background: var(--green); }
+  .dot-fetching { background: var(--amber); animation: blink 0.7s infinite alternate; }
+  .dot-error    { background: var(--red); }
+  @keyframes blink { to { opacity: 0.2; } }
+  .rs-sep   { width: 1px; height: 20px; background: var(--border); }
+  .rs-ts    { font-size: 11px; color: var(--muted); }
+
+  /* ── Main content ── */
+  .main { padding: 20px 24px; }
+
+  /* ── Scoring pills ── */
+  .scoring-row {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; margin-bottom: 18px;
+  }
+  .pill {
+    font-size: 12px; padding: 4px 10px; border-radius: 20px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .pill b { color: var(--text); font-weight: 600; }
+  .pill-goal { border-color: var(--blue); color: var(--blue); }
+  .pill-goal b { color: var(--blue); }
+  .btn-edit-pts {
+    font-size: 12px; padding: 4px 10px; border-radius: 20px;
+    background: transparent; border: 1px dashed var(--border);
+    color: var(--muted); cursor: pointer;
+  }
+  .btn-edit-pts:hover { border-color: rgba(255,255,255,0.2); color: var(--text); }
+
+  /* ── Pts editor ── */
+  .pts-editor {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px;
+    margin-bottom: 18px; display: none;
+  }
+  .pts-editor h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .pts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .pts-field label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .pts-field input {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 13px;
+  }
+  .pts-field input:focus { outline: none; border-color: var(--blue); }
+
+  /* ── Summary cards ── */
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .s-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .s-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .s-val   { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; }
+  .s-sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .s-green { color: var(--green); }
+  .s-blue  { color: var(--blue); }
+
+  /* ── Filters ── */
+  .filters-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .filters-row label { font-size: 12px; color: var(--muted); }
+  .filters-row select {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-sm);
+    padding: 5px 10px; font-size: 12px; cursor: pointer;
+  }
+  .filters-row select:focus { outline: none; border-color: var(--blue); }
+  .agent-count { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  thead tr { background: var(--surface); border-bottom: 1px solid var(--border); }
+  th {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 10px 14px; text-align: left; cursor: pointer;
+    user-select: none; white-space: nowrap;
+  }
+  th:hover { color: var(--text); }
+  th.r, td.r { text-align: right; }
+  td {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    vertical-align: middle; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 180px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { background: var(--surface); transition: background 0.1s; }
+  tbody tr:nth-child(even) { background: #191c28; }
+  tbody tr:hover td { background: var(--surface2) !important; }
+
+  .rank-num { font-size: 13px; font-weight: 700; color: var(--muted); }
+  .rank-1   { color: var(--gold); }
+  .rank-2   { color: var(--silver); }
+  .rank-3   { color: var(--bronze); }
+
+  .agent-cell { display: flex; align-items: center; gap: 10px; min-width: 160px; }
+  .av {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+  }
+  .agent-name  { font-size: 13px; font-weight: 500; color: var(--text); }
+  .agent-group { font-size: 11px; color: var(--muted); }
+
+  .score-val { font-size: 15px; font-weight: 700; }
+  .c-green { color: var(--green); }
+  .c-amber { color: var(--amber); }
+  .c-red   { color: var(--red); }
+
+  .bar-bg   { width: 80px; height: 5px; background: var(--surface2); border-radius: 3px; display: inline-block; vertical-align: middle; border: 1px solid var(--border); }
+  .bar-fill { height: 100%; border-radius: 3px; }
+
+  .stat-num { font-size: 13px; color: var(--text); }
+  .stat-zero { color: var(--muted); }
+
+  .badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px; letter-spacing: 0.3px; display: inline-block; }
+  .badge-hit   { background: var(--green-bg); color: var(--green); }
+  .badge-close { background: var(--amber-bg); color: var(--amber); }
+  .badge-miss  { background: var(--red-bg);   color: var(--red);   }
+
+  /* Flash animation when score changes */
+  @keyframes rowflash { 0% { background: rgba(79,142,247,0.25) !important; } 100% { background: transparent; } }
+  .flash td { animation: rowflash 1.2s ease-out; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center; padding: 60px 20px; color: var(--muted);
+    font-size: 14px; line-height: 2;
+  }
+  .empty-state strong { color: var(--text); display: block; font-size: 16px; margin-bottom: 8px; }
+
+  /* ── Footer ── */
+  .footer {
+    padding: 12px 24px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+
+  /* ── TV mode (≥1800px) ── */
+  @media (min-width: 1800px) {
+    body { font-size: 16px; }
+    .header-title { font-size: 20px; }
+    .s-val { font-size: 32px; }
+    td, th { padding: 12px 18px; }
+    .score-val { font-size: 18px; }
+    .agent-name { font-size: 15px; }
+    .av { width: 36px; height: 36px; font-size: 13px; }
+    .bar-bg { width: 100px; height: 6px; }
+  }
+
+  /* ── Mobile ── */
+  @media (max-width: 600px) {
+    .header, .main, .refresh-strip, .footer { padding-left: 14px; padding-right: 14px; }
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .summary-grid .s-card:last-child { grid-column: span 2; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-brand">
+    <div class="header-logo">EM</div>
+    <div>
+      <div class="header-title">200-Point Leaderboard</div>
+      <div class="header-sub" id="headerSub">eMortgage Funding — Daily Effort Tracker</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <input type="date" id="reportDate">
+    <button class="btn btn-paused" id="btnPause" onclick="togglePause()">Pause</button>
+    <button class="btn" onclick="forceRefresh()">Refresh now</button>
+  </div>
+</div>
+
+<!-- Refresh strip -->
+<div class="refresh-strip">
+  <div class="rs-item">
+    <div class="dot dot-ok" id="sfDot"></div>
+    <span class="rs-label">Salesforce</span>
+    <span class="rs-val" id="sfCountdown">—</span>
+    <div class="rs-bar-bg"><div class="rs-bar-fill" id="sfBar" style="width:100%"></div></div>
+  </div>
+  <div class="rs-sep"></div>
+  <div class="rs-item">
+    <div class="dot dot-ok" id="viciDot"></div>
+    <span class="rs-label">VICIdial</span>
+    <span class="rs-val" id="viciCountdown">—</span>
+    <div class="rs-bar-bg"><div class="rs-bar-fill" id="viciBar" style="width:100%"></div></div>
+  </div>
+  <div class="rs-sep"></div>
+  <span class="rs-ts">SF: <span id="sfTs">—</span></span>
+  <div class="rs-sep"></div>
+  <span class="rs-ts">Dialer: <span id="viciTs">—</span></span>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Scoring pills -->
+  <div class="scoring-row">
+    <div class="pill">Dial = <b id="lDial">1</b> pt</div>
+    <div class="pill">Transfer = <b id="lXfr">10</b> pts</div>
+    <div class="pill">App out = <b id="lApp">100</b> pts</div>
+    <div class="pill"><b id="lPN">3</b> soft pulls = <b id="lPP">100</b> pts</div>
+    <div class="pill pill-goal">Goal = <b id="lGoal">200</b> pts</div>
+    <button class="btn-edit-pts" onclick="togglePtsEditor()">Edit values</button>
+  </div>
+
+  <!-- Pts editor -->
+  <div class="pts-editor" id="ptsEditor">
+    <h3>Point values</h3>
+    <div class="pts-grid">
+      <div class="pts-field"><label>1 dial</label><input type="number" id="ptDial" value="1" min="0"></div>
+      <div class="pts-field"><label>1 transfer picked up</label><input type="number" id="ptXfr" value="10" min="0"></div>
+      <div class="pts-field"><label>1 app out (disclosure today)</label><input type="number" id="ptApp" value="100" min="0"></div>
+      <div class="pts-field"><label>Soft pull batch size</label><input type="number" id="ptPN" value="3" min="1"></div>
+      <div class="pts-field"><label>Points per soft pull batch</label><input type="number" id="ptPP" value="100" min="0"></div>
+      <div class="pts-field"><label>Daily goal</label><input type="number" id="ptGoal" value="200" min="1"></div>
+    </div>
+    <div style="margin-top:14px; display:flex; gap:8px;">
+      <button class="btn btn-primary" onclick="applyPts()">Apply</button>
+      <button class="btn" onclick="togglePtsEditor()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="summary-grid">
+    <div class="s-card">
+      <div class="s-label">Active agents</div>
+      <div class="s-val" id="sAgents">—</div>
+    </div>
+    <div class="s-card">
+      <div class="s-label">Hit goal</div>
+      <div class="s-val s-green" id="sHit">—</div>
+      <div class="s-sub" id="sHitPct"></div>
+    </div>
+    <div class="s-card">
+      <div class="s-label">Total dials</div>
+      <div class="s-val" id="sDials">—</div>
+    </div>
+    <div class="s-card">
+      <div class="s-label">Total transfers</div>
+      <div class="s-val s-blue" id="sXfrs">—</div>
+    </div>
+    <div class="s-card">
+      <div class="s-label">Avg score</div>
+      <div class="s-val" id="sAvg">—</div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-row">
+    <label>Team:</label>
+    <select id="gf" onchange="renderTable()"><option value="">All teams</option></select>
+    <label>Status:</label>
+    <select id="sf2" onchange="renderTable()">
+      <option value="">All</option>
+      <option value="hit">Hit goal</option>
+      <option value="close">Close (75%+)</option>
+      <option value="miss">Below 75%</option>
+    </select>
+    <span class="agent-count" id="agentCount"></span>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <colgroup>
+        <col style="width:40px">
+        <col style="width:200px">
+        <col style="width:80px">
+        <col style="width:100px">
+        <col style="width:70px">
+        <col style="width:70px">
+        <col style="width:65px">
+        <col style="width:70px">
+        <col style="width:70px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th onclick="sortBy('rank')">#</th>
+          <th onclick="sortBy('name')">Agent</th>
+          <th class="r" onclick="sortBy('pts')">Score <span id="si-pts">↓</span></th>
+          <th></th>
+          <th class="r" onclick="sortBy('dials')">Dials</th>
+          <th class="r" onclick="sortBy('transfers')">Xfers</th>
+          <th class="r" onclick="sortBy('apps')">Apps</th>
+          <th class="r" onclick="sortBy('pulls')">Pulls</th>
+          <th onclick="sortBy('pts')">Status</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="9"><div class="empty-state"><strong>Loading leaderboard...</strong>Fetching live data from Salesforce and VICIdial.</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <span>Sources: VICIdial dials (10-min) &bull; SF transfers: Lead where Dialer_Agent__c != null &amp; Owner != TalkItPro &bull; Soft pulls: Date_of_Soft_Pull__c = TODAY &bull; Apps: imbus__Initial_Disclosure_Date__c = TODAY (60-sec)</span>
+  <span id="footerTs">—</span>
+</div>
+
+<script>
+const SF_INTERVAL   = 60;
+const VICI_INTERVAL = 600;
+
+let PTS = { dial:1, xfr:10, app:100, pullN:3, pullPts:100, goal:200 };
+let allAgents = [];
+let sortKey = 'pts', sortDir = -1;
+let paused = false;
+let sfSecsLeft = 0, viciSecsLeft = 0;
+let sfFetching = false, viciFetching = false;
+let sfLastTs = null, viciLastTs = null;
+let prevPts = {};
+
+const AV_COLORS = [
+  ['#1a3a6b','#4f8ef7'],['#0d3d2e','#3ecf8e'],['#4a2800','#f5a623'],
+  ['#3d1a1a','#f76f6f'],['#2a1a4a','#a78bfa'],['#1a3a3a','#34d3d3'],
+];
+
+function today() { return new Date().toISOString().split('T')[0]; }
+function fmtTime(s) { return s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`; }
+function fmtTs(d)   { return d ? d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'}) : '—'; }
+function initials(n){ return (n||'').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?'; }
+function avStyle(id){
+  const c = AV_COLORS[(parseInt(id)||0) % AV_COLORS.length];
+  return `background:${c[0]};color:${c[1]}`;
+}
+function calcPts(a){
+  return Math.round(a.dials*PTS.dial + a.transfers*PTS.xfr + a.apps*PTS.app + Math.floor(a.pulls/PTS.pullN)*PTS.pullPts);
+}
+function ptsClass(p){ return p>=PTS.goal?'c-green':p>=PTS.goal*0.75?'c-amber':'c-red'; }
+function badge(p){
+  if(p>=PTS.goal)       return '<span class="badge badge-hit">HIT</span>';
+  if(p>=PTS.goal*0.75)  return '<span class="badge badge-close">CLOSE</span>';
+  return '<span class="badge badge-miss">BELOW</span>';
+}
+function setDot(el, state){
+  el.className = 'dot dot-'+state;
+}
+
+// ── Fetch from server proxy ───────────────────────────────────────────────────
+async function fetchSF() {
+  if (sfFetching) return;
+  sfFetching = true;
+  setDot(document.getElementById('sfDot'), 'fetching');
+  const date = document.getElementById('reportDate').value || today();
+  try {
+    const soqlXfr  = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Dialer_Agent__c != null AND OwnerId NOT IN (SELECT Id FROM User WHERE Name LIKE '%Talk It Pro%' OR Name LIKE '%VDAD%') AND CreatedDate = TODAY GROUP BY Dialer_Agent__c LIMIT 500`;
+    const soqlPull = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Date_of_Soft_Pull__c = TODAY AND Dialer_Agent__c != null GROUP BY Dialer_Agent__c LIMIT 500`;
+    const soqlApp  = `SELECT Owner.Name, COUNT(Id) cnt FROM Opportunity WHERE imbus__Initial_Disclosure_Date__c = TODAY GROUP BY Owner.Name LIMIT 500`;
+    const [xfr, pull, app] = await Promise.all([
+      fetch('/api/sf?q='+encodeURIComponent(soqlXfr)).then(r=>r.json()),
+      fetch('/api/sf?q='+encodeURIComponent(soqlPull)).then(r=>r.json()),
+      fetch('/api/sf?q='+encodeURIComponent(soqlApp)).then(r=>r.json()),
+    ]);
+    sfData = { transfers: Array.isArray(xfr)?xfr:[], pulls: Array.isArray(pull)?pull:[], apps: Array.isArray(app)?app:[] };
+    sfLastTs = new Date();
+    setDot(document.getElementById('sfDot'), 'ok');
+  } catch(e) {
+    console.error('SF fetch error:', e);
+    setDot(document.getElementById('sfDot'), 'error');
+  }
+  sfFetching = false;
+  mergeAndRender();
+}
+
+async function fetchVici() {
+  if (viciFetching) return;
+  viciFetching = true;
+  setDot(document.getElementById('viciDot'), 'fetching');
+  const date = document.getElementById('reportDate').value || today();
+  try {
+    const r = await fetch('/api/vici?date='+date);
+    const d = await r.json();
+    if (Array.isArray(d) && d.length > 0) {
+      viciData = d;
+      viciLastTs = new Date();
+      setDot(document.getElementById('viciDot'), 'ok');
+    } else {
+      setDot(document.getElementById('viciDot'), 'error');
+    }
+  } catch(e) {
+    console.error('VICIdial fetch error:', e);
+    setDot(document.getElementById('viciDot'), 'error');
+  }
+  viciFetching = false;
+  mergeAndRender();
+}
+
+let sfData   = { transfers:[], pulls:[], apps:[] };
+let viciData = [];
+
+function mergeAndRender() {
+  const xfrMap = {}, pullMap = {}, appMap = {};
+  sfData.transfers.forEach(r => { if(r.Dialer_Agent__c) xfrMap[r.Dialer_Agent__c]  = (xfrMap[r.Dialer_Agent__c]||0)  + (r.cnt||0); });
+  sfData.pulls.forEach(r    => { if(r.Dialer_Agent__c) pullMap[r.Dialer_Agent__c] = (pullMap[r.Dialer_Agent__c]||0) + (r.cnt||0); });
+  sfData.apps.forEach(r     => {
+    const k = r['Owner.Name'] || r.OwnerName;
+    if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0);
+  });
+  allAgents = viciData.map(a => ({
+    ...a,
+    transfers: xfrMap[a.name] || xfrMap[a.id] || 0,
+    pulls:     pullMap[a.name] || pullMap[a.id] || 0,
+    apps:      appMap[a.name] || 0,
+  }));
+  populateGroupFilter();
+  updateSummary();
+  renderTable();
+  document.getElementById('footerTs').textContent = 'Updated ' + fmtTs(new Date());
+}
+
+// ── Timer loop ────────────────────────────────────────────────────────────────
+function tick() {
+  if (!paused) {
+    sfSecsLeft--;
+    viciSecsLeft--;
+    if (sfSecsLeft   <= 0) { sfSecsLeft   = SF_INTERVAL;   fetchSF(); }
+    if (viciSecsLeft <= 0) { viciSecsLeft = VICI_INTERVAL; fetchVici(); }
+  }
+  const sfPct   = Math.round(sfSecsLeft   / SF_INTERVAL   * 100);
+  const viciPct = Math.round(viciSecsLeft / VICI_INTERVAL * 100);
+  document.getElementById('sfCountdown').textContent   = sfFetching   ? 'fetching…' : `next in ${fmtTime(sfSecsLeft)}`;
+  document.getElementById('viciCountdown').textContent = viciFetching ? 'fetching…' : `next in ${fmtTime(viciSecsLeft)}`;
+  document.getElementById('sfBar').style.width   = sfPct + '%';
+  document.getElementById('viciBar').style.width = viciPct + '%';
+  document.getElementById('sfTs').textContent   = fmtTs(sfLastTs);
+  document.getElementById('viciTs').textContent = fmtTs(viciLastTs);
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function updateSummary() {
+  const scored  = allAgents.map(a => ({ ...a, pts: calcPts(a) }));
+  const active  = allAgents.filter(a => a.dials>0||a.transfers>0||a.apps>0||a.pulls>0).length;
+  const hit     = scored.filter(a => a.pts >= PTS.goal).length;
+  const avgPts  = scored.length ? Math.round(scored.reduce((s,a) => s+a.pts,0)/scored.length) : 0;
+  document.getElementById('sAgents').textContent = active;
+  document.getElementById('sHit').textContent    = hit;
+  document.getElementById('sHitPct').textContent = allAgents.length ? Math.round(hit/allAgents.length*100)+'% of team' : '';
+  document.getElementById('sDials').textContent  = allAgents.reduce((s,a)=>s+a.dials,0).toLocaleString();
+  document.getElementById('sXfrs').textContent   = allAgents.reduce((s,a)=>s+a.transfers,0).toLocaleString();
+  document.getElementById('sAvg').textContent    = avgPts;
+
+  const date = document.getElementById('reportDate').value || today();
+  const ds = new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('headerSub').textContent = `eMortgage Funding — ${ds}`;
+}
+
+function renderTable() {
+  const g  = document.getElementById('gf').value;
+  const s  = document.getElementById('sf2').value;
+  let data = allAgents.map(a => ({ ...a, pts: calcPts(a) })).filter(a => {
+    if (g && a.group !== g) return false;
+    if (s === 'hit'   && a.pts < PTS.goal)                    return false;
+    if (s === 'close' && (a.pts < PTS.goal*0.75||a.pts >= PTS.goal)) return false;
+    if (s === 'miss'  && a.pts >= PTS.goal*0.75)              return false;
+    return true;
+  });
+  if (sortKey === 'name') data.sort((a,b) => sortDir * a.name.localeCompare(b.name));
+  else data.sort((a,b) => sortDir * (b[sortKey] - a[sortKey]));
+
+  document.getElementById('agentCount').textContent = `${data.length} agent${data.length!==1?'s':''}`;
+
+  if (data.length === 0) {
+    document.getElementById('tbody').innerHTML =
+      '<tr><td colspan="9"><div class="empty-state"><strong>No agents match this filter</strong>Try adjusting the team or status filter above.</div></td></tr>';
+    return;
+  }
+
+  document.getElementById('tbody').innerHTML = data.map((a, i) => {
+    const pct  = Math.min(Math.round(a.pts / PTS.goal * 100), 100);
+    const fc   = a.pts >= PTS.goal ? '#3ecf8e' : a.pts >= PTS.goal*0.75 ? '#f5a623' : '#f76f6f';
+    const changed = prevPts[a.id] !== undefined && prevPts[a.id] !== a.pts;
+    prevPts[a.id] = a.pts;
+    const sn = v => `<span class="${v===0?'stat-zero':'stat-num'}">${v}</span>`;
+    return `<tr class="${changed ? 'flash' : ''}">
+      <td><span class="rank-num ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':''}">${i+1}</span></td>
+      <td>
+        <div class="agent-cell">
+          <div class="av" style="${avStyle(a.id)}">${initials(a.name)}</div>
+          <div>
+            <div class="agent-name">${a.name}</div>
+            <div class="agent-group">${a.group}</div>
+          </div>
+        </div>
+      </td>
+      <td class="r"><span class="score-val ${ptsClass(a.pts)}">${a.pts}</span></td>
+      <td><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${fc}"></div></div></td>
+      <td class="r">${sn(a.dials)}</td>
+      <td class="r">${sn(a.transfers)}</td>
+      <td class="r">${sn(a.apps)}</td>
+      <td class="r">${sn(a.pulls)}</td>
+      <td>${badge(a.pts)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function populateGroupFilter() {
+  const gf  = document.getElementById('gf');
+  const cur = gf.value;
+  gf.innerHTML = '<option value="">All teams</option>';
+  [...new Set(allAgents.map(a => a.group))].sort().forEach(g => {
+    const o = document.createElement('option');
+    o.value = g; o.textContent = g;
+    if (g === cur) o.selected = true;
+    gf.appendChild(o);
+  });
+}
+
+function sortBy(k) {
+  if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = -1; }
+  document.querySelectorAll('[id^=si-]').forEach(el => el.textContent = '');
+  const si = document.getElementById('si-'+k);
+  if (si) si.textContent = sortDir === -1 ? '↓' : '↑';
+  renderTable();
+}
+
+function togglePause() {
+  paused = !paused;
+  const btn = document.getElementById('btnPause');
+  btn.textContent  = paused ? 'Resume' : 'Pause';
+  btn.className    = paused ? 'btn btn-primary' : 'btn btn-paused';
+}
+
+function forceRefresh() { sfSecsLeft = 0; viciSecsLeft = 0; }
+
+function togglePtsEditor() {
+  const el = document.getElementById('ptsEditor');
+  el.style.display = el.style.display === 'none' || !el.style.display ? 'block' : 'none';
+}
+
+function applyPts() {
+  PTS.dial    = +document.getElementById('ptDial').value  || 1;
+  PTS.xfr     = +document.getElementById('ptXfr').value   || 10;
+  PTS.app     = +document.getElementById('ptApp').value   || 100;
+  PTS.pullN   = +document.getElementById('ptPN').value    || 3;
+  PTS.pullPts = +document.getElementById('ptPP').value    || 100;
+  PTS.goal    = +document.getElementById('ptGoal').value  || 200;
+  document.getElementById('lDial').textContent  = PTS.dial;
+  document.getElementById('lXfr').textContent   = PTS.xfr;
+  document.getElementById('lApp').textContent   = PTS.app;
+  document.getElementById('lPN').textContent    = PTS.pullN;
+  document.getElementById('lPP').textContent    = PTS.pullPts;
+  document.getElementById('lGoal').textContent  = PTS.goal;
+  togglePtsEditor();
+  updateSummary();
+  renderTable();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('reportDate').value = today();
+setInterval(tick, 1000);
+tick(); // fires fetchSF and fetchVici immediately (secsLeft=0)
+</script>
+</body>
+</html>
