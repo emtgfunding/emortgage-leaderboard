@@ -36,8 +36,8 @@ async function getSFToken() {
     username: SF_USERNAME,
     password: SF_PASSWORD,
   });
-  const r = await fetch(`${SF_URL}/services/oauth2/token`, { method: 'POST', body: params });
-  const d = await r.json();
+const loginUrl = process.env.SF_LOGIN_URL || SF_URL;
+const r = await fetch(`${loginUrl}/services/oauth2/token`, { method: 'POST', body: params });  const d = await r.json();
   if (!d.access_token) throw new Error('SF auth failed: ' + JSON.stringify(d));
   sfCache = { token: d.access_token, instance: d.instance_url || SF_URL, expires: Date.now() + 55 * 60 * 1000 };
   return sfCache;
