@@ -260,7 +260,7 @@
   }
   tbody tr:last-child td { border-bottom: none; }
   tbody tr { background: var(--surface); transition: background 0.1s; }
-  tbody tr:nth-child(even) { background: #191c28; }
+  tbody tr:nth-child(even) { background: var(--surface2); }
   tbody tr:hover td { background: var(--surface2) !important; }
 
   .rank-num { font-size: 13px; font-weight: 700; color: var(--muted); }
@@ -659,6 +659,9 @@ function mergeAndRender() {
   });
 
   allAgents = Object.values(agentMap);
+  sortKey = 'pts'; sortDir = -1;
+  const siEl = document.getElementById('si-pts');
+  if (siEl) { document.querySelectorAll('[id^=si-]').forEach(e=>e.textContent=''); siEl.textContent='↓'; }
   populateGroupFilter();
   updateSummary();
   renderTable();
@@ -686,18 +689,25 @@ function tick() {
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function updateSummary() {
   const scored  = allAgents.map(a => ({ ...a, pts: calcPts(a) }));
-  const active  = allAgents.filter(a => a.dials>0||a.transfers>0||a.apps>0||a.pulls>0).length;
-  const total   = allAgents.length;
-  const hit     = scored.filter(a => a.pts >= PTS.goal).length;
-  const avgPts  = scored.length ? Math.round(scored.reduce((s,a) => s+a.pts,0)/scored.length) : 0;
+  // Filter to selected teams for totals
+  const filtered = selectedTeams.size > 0
+    ? allAgents.filter(a => selectedTeams.has(a.group))
+    : allAgents;
+  const filteredScored = selectedTeams.size > 0
+    ? scored.filter(a => selectedTeams.has(a.group))
+    : scored;
+  const active  = filtered.filter(a => a.dials>0||a.transfers>0||a.apps>0||a.pulls>0).length;
+  const total   = filtered.length;
+  const hit     = filteredScored.filter(a => a.pts >= PTS.goal).length;
+  const avgPts  = filteredScored.length ? Math.round(filteredScored.reduce((s,a) => s+a.pts,0)/filteredScored.length) : 0;
   document.getElementById('sAgents').textContent    = `${active}/${total}`;
   document.getElementById('sAgentsSub').textContent = 'active / total LOs';
   document.getElementById('sHit').textContent       = `${hit}/${total}`;
   document.getElementById('sHitPct').textContent    = total ? Math.round(hit/total*100)+'% of team' : '';
-  document.getElementById('sDials').textContent     = allAgents.reduce((s,a)=>s+a.dials,0).toLocaleString();
-  document.getElementById('sXfrs').textContent      = allAgents.reduce((s,a)=>s+a.transfers,0).toLocaleString();
-  document.getElementById('sPulls').textContent     = allAgents.reduce((s,a)=>s+a.pulls,0).toLocaleString();
-  document.getElementById('sApps').textContent      = allAgents.reduce((s,a)=>s+a.apps,0).toLocaleString();
+  document.getElementById('sDials').textContent     = filtered.reduce((s,a)=>s+a.dials,0).toLocaleString();
+  document.getElementById('sXfrs').textContent      = filtered.reduce((s,a)=>s+a.transfers,0).toLocaleString();
+  document.getElementById('sPulls').textContent     = filtered.reduce((s,a)=>s+a.pulls,0).toLocaleString();
+  document.getElementById('sApps').textContent      = filtered.reduce((s,a)=>s+a.apps,0).toLocaleString();
   document.getElementById('sAvg').textContent       = avgPts;
 
   const date = document.getElementById('reportDate').value || today();
@@ -795,6 +805,7 @@ function onTeamCheckChange() {
   updateTeamPickerLabel();
   activeSearchName = null;
   renderSavedSearchTags();
+  updateSummary();
   renderTable();
 }
 function updateTeamPickerLabel() {
@@ -829,6 +840,7 @@ function applySearch(search) {
   updateTeamPickerLabel();
   activeSearchName = search.name;
   renderSavedSearchTags();
+  updateSummary();
   renderTable();
 }
 
@@ -897,7 +909,11 @@ function forceRefresh() { sfSecsLeft = 0; viciSecsLeft = 0; }
 
 function togglePtsEditor() {
   const el = document.getElementById('ptsEditor');
-  el.style.display = el.style.display === 'none' || !el.style.display ? 'block' : 'none';
+  const isOpen = el.style.display === 'block';
+  if (isOpen) { el.style.display = 'none'; return; }
+  const pwd = prompt('Enter admin password to edit values:');
+  if (pwd !== 'emtg2026') { alert('Incorrect password.'); return; }
+  el.style.display = 'block';
 }
 
 function applyPts() {
@@ -926,7 +942,7 @@ function toggleTheme() {
 }
 
 document.getElementById('reportDate').value = today();
-if (localStorage.getItem('lb_theme') === 'light') {
+if (localStorage.getItem('lb_theme') !== 'dark') {
   document.body.classList.add('light-mode');
   document.getElementById('btnTheme').textContent = 'Dark mode';
 }
