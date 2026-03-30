@@ -727,7 +727,7 @@ function renderTable() {
     return true;
   });
   if (sortKey === 'name') data.sort((a,b) => sortDir * a.name.localeCompare(b.name));
-  else data.sort((a,b) => sortDir * (b[sortKey] - a[sortKey]));
+  else data.sort((a,b) => sortDir * (a[sortKey] - b[sortKey]));
 
   document.getElementById('agentCount').textContent = `${data.length} agent${data.length!==1?'s':''}`;
 
