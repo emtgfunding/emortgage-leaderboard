@@ -156,17 +156,71 @@
 
   /* ── Filters ── */
   .filters-row {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: flex-start; gap: 10px;
     margin-bottom: 14px; flex-wrap: wrap;
   }
-  .filters-row label { font-size: 12px; color: var(--muted); }
+  .filters-row label { font-size: 12px; color: var(--muted); padding-top: 6px; }
   .filters-row select {
     background: var(--surface2); border: 1px solid var(--border);
     color: var(--text); border-radius: var(--radius-sm);
     padding: 5px 10px; font-size: 12px; cursor: pointer;
   }
   .filters-row select:focus { outline: none; border-color: var(--blue); }
-  .agent-count { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .agent-count { font-size: 12px; color: var(--muted); margin-left: auto; padding-top: 6px; }
+
+  /* Multi-select team picker */
+  .team-picker { position: relative; }
+  .team-picker-btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-sm);
+    padding: 5px 10px; font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px; min-width: 140px;
+    white-space: nowrap;
+  }
+  .team-picker-btn:hover { border-color: rgba(255,255,255,0.2); }
+  .team-picker-dropdown {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); min-width: 200px; z-index: 200;
+    max-height: 300px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .team-picker-dropdown.open { display: block; }
+  .team-picker-option {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px; cursor: pointer; font-size: 12px; color: var(--text);
+  }
+  .team-picker-option:hover { background: var(--surface2); }
+  .team-picker-option input[type=checkbox] { accent-color: var(--blue); width: 13px; height: 13px; }
+  .team-picker-actions {
+    display: flex; gap: 6px; padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .team-picker-actions button {
+    font-size: 11px; padding: 3px 8px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--muted);
+  }
+  .team-picker-actions button:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+
+  /* Saved searches */
+  .saved-searches { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .saved-search-tag {
+    display: flex; align-items: center; gap: 4px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 10px; font-size: 11px;
+    cursor: pointer; color: var(--muted); transition: all 0.15s;
+  }
+  .saved-search-tag:hover { border-color: var(--blue); color: var(--text); }
+  .saved-search-tag.active { border-color: var(--blue); color: var(--blue); background: rgba(79,142,247,0.1); }
+  .saved-search-tag .del { color: var(--muted); font-size: 13px; line-height: 1; margin-left: 2px; }
+  .saved-search-tag .del:hover { color: var(--red); }
+  .btn-save-search {
+    font-size: 11px; padding: 3px 9px; cursor: pointer;
+    background: transparent; border: 1px dashed var(--border);
+    border-radius: 20px; color: var(--muted);
+  }
+  .btn-save-search:hover { border-color: var(--blue); color: var(--blue); }
 
   /* ── Table ── */
   .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
@@ -353,9 +407,32 @@
   </div>
 
   <!-- Filters -->
+  <!-- Saved searches -->
+  <div class="saved-searches" id="savedSearches">
+    <span style="font-size:11px;color:var(--muted);padding-top:2px">Quick views:</span>
+    <button class="btn-save-search" onclick="saveCurrentSearch()">+ Save current filter</button>
+  </div>
+
   <div class="filters-row">
-    <label>Team:</label>
-    <select id="gf" onchange="renderTable()"><option value="">All teams</option></select>
+    <label>Teams:</label>
+    <div class="team-picker" id="teamPicker">
+      <button class="team-picker-btn" onclick="toggleTeamPicker(event)" id="teamPickerBtn">
+        <span id="teamPickerLabel">All teams</span>
+        <span style="margin-left:auto;opacity:0.5;font-size:10px">▼</span>
+      </button>
+      <div class="team-picker-dropdown" id="teamPickerDropdown">
+        <div class="team-picker-option">
+          <input type="checkbox" id="chk-all" onchange="toggleAllTeams(this.checked)">
+          <label for="chk-all" style="cursor:pointer;font-weight:500">All teams</label>
+        </div>
+        <div id="teamCheckboxes"></div>
+        <div class="team-picker-actions">
+          <button onclick="clearTeams()">Clear</button>
+          <button onclick="selectAllTeams()">Select all</button>
+          <button onclick="closeTeamPicker()" style="margin-left:auto;border-color:var(--blue);color:var(--blue)">Done</button>
+        </div>
+      </div>
+    </div>
     <label>Status:</label>
     <select id="sf2" onchange="renderTable()">
       <option value="">All</option>
@@ -452,7 +529,7 @@ async function fetchSF() {
   setDot(document.getElementById('sfDot'), 'fetching');
   try {
     // Fetch all SF users with LO or LOA profile
-    const soqlUsers = `SELECT Id, Name, UserRole.Name FROM User WHERE Profile.Name IN ('Loan Officer', 'LOA') AND IsActive = true ORDER BY Name LIMIT 500`;
+    const soqlUsers = `SELECT Id, Name, UserRole.Name FROM User WHERE Profile.Name IN ('Loan Officer Profile', 'LOA') AND IsActive = true ORDER BY Name LIMIT 500`;
     const soqlXfr   = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Dialer_Agent__c != null AND OwnerId NOT IN (SELECT Id FROM User WHERE Name LIKE '%Talk It Pro%' OR Name LIKE '%VDAD%') AND CreatedDate = TODAY GROUP BY Dialer_Agent__c LIMIT 500`;
     const soqlPull  = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Date_of_Soft_Pull__c = TODAY AND Dialer_Agent__c != null GROUP BY Dialer_Agent__c LIMIT 500`;
     const soqlApp   = `SELECT Owner.Name, COUNT(Id) cnt FROM Opportunity WHERE imbus__Initial_Disclosure_Date__c = TODAY GROUP BY Owner.Name LIMIT 500`;
@@ -533,16 +610,8 @@ function mergeAndRender() {
     };
   });
 
-  // Also add any agents from SF activity not in the user list (name mismatch edge case)
-  sfAgentNames.forEach(name => {
-    if (!agentMap[name]) {
-      agentMap[name] = {
-        name, id: name, group: 'Other',
-        dials: dialMap[name]||0, transfers: xfrMap[name]||0,
-        pulls: pullMap[name]||0, apps: appMap[name]||0,
-      };
-    }
-  });
+  // Do NOT add agents from SF activity who aren't in the SF user list
+  // This prevents non-SF users (e.g. Dialer_Agent__c free-text entries) from appearing
 
   // Merge VICIdial dials for any agents already in map
   viciData.forEach(a => {
@@ -596,10 +665,9 @@ function updateSummary() {
 }
 
 function renderTable() {
-  const g  = document.getElementById('gf').value;
   const s  = document.getElementById('sf2').value;
   let data = allAgents.map(a => ({ ...a, pts: calcPts(a) })).filter(a => {
-    if (g && a.group !== g) return false;
+    if (selectedTeams.size > 0 && !selectedTeams.has(a.group)) return false;
     if (s === 'hit'   && a.pts < PTS.goal)                    return false;
     if (s === 'close' && (a.pts < PTS.goal*0.75||a.pts >= PTS.goal)) return false;
     if (s === 'miss'  && a.pts >= PTS.goal*0.75)              return false;
@@ -644,16 +712,127 @@ function renderTable() {
   }).join('');
 }
 
-function populateGroupFilter() {
-  const gf  = document.getElementById('gf');
-  const cur = gf.value;
-  gf.innerHTML = '<option value="">All teams</option>';
-  [...new Set(allAgents.map(a => a.group))].sort().forEach(g => {
-    const o = document.createElement('option');
-    o.value = g; o.textContent = g;
-    if (g === cur) o.selected = true;
-    gf.appendChild(o);
+let selectedTeams = new Set(); // empty = all teams
+let savedSearches = JSON.parse(localStorage.getItem('lb_saved_searches') || '[]');
+let activeSearchName = null;
+
+function toggleTeamPicker(e) {
+  e.stopPropagation();
+  document.getElementById('teamPickerDropdown').classList.toggle('open');
+}
+function closeTeamPicker() {
+  document.getElementById('teamPickerDropdown').classList.remove('open');
+}
+document.addEventListener('click', e => {
+  if (!document.getElementById('teamPicker').contains(e.target)) closeTeamPicker();
+});
+
+function toggleAllTeams(checked) {
+  document.querySelectorAll('.team-chk').forEach(c => c.checked = checked);
+  if (checked) {
+    selectedTeams = new Set([...document.querySelectorAll('.team-chk')].map(c => c.value));
+  } else {
+    selectedTeams = new Set();
+  }
+  updateTeamPickerLabel();
+  renderTable();
+}
+function selectAllTeams() {
+  document.getElementById('chk-all').checked = true;
+  toggleAllTeams(true);
+}
+function clearTeams() {
+  document.getElementById('chk-all').checked = false;
+  toggleAllTeams(false);
+}
+function onTeamCheckChange() {
+  selectedTeams = new Set([...document.querySelectorAll('.team-chk:checked')].map(c => c.value));
+  const all = document.querySelectorAll('.team-chk');
+  document.getElementById('chk-all').checked = selectedTeams.size === all.length;
+  updateTeamPickerLabel();
+  activeSearchName = null;
+  renderSavedSearchTags();
+  renderTable();
+}
+function updateTeamPickerLabel() {
+  const lbl = document.getElementById('teamPickerLabel');
+  if (selectedTeams.size === 0) lbl.textContent = 'All teams';
+  else if (selectedTeams.size === 1) lbl.textContent = [...selectedTeams][0];
+  else lbl.textContent = `${selectedTeams.size} teams`;
+}
+
+function saveCurrentSearch() {
+  const name = prompt('Name this view:');
+  if (!name || !name.trim()) return;
+  const search = {
+    name: name.trim(),
+    teams: [...selectedTeams],
+    status: document.getElementById('sf2').value,
+  };
+  savedSearches = savedSearches.filter(s => s.name !== search.name);
+  savedSearches.push(search);
+  localStorage.setItem('lb_saved_searches', JSON.stringify(savedSearches));
+  activeSearchName = search.name;
+  renderSavedSearchTags();
+}
+
+function applySearch(search) {
+  selectedTeams = new Set(search.teams);
+  document.getElementById('sf2').value = search.status || '';
+  document.querySelectorAll('.team-chk').forEach(c => {
+    c.checked = selectedTeams.has(c.value);
   });
+  document.getElementById('chk-all').checked = selectedTeams.size === document.querySelectorAll('.team-chk').length;
+  updateTeamPickerLabel();
+  activeSearchName = search.name;
+  renderSavedSearchTags();
+  renderTable();
+}
+
+function deleteSearch(name, e) {
+  e.stopPropagation();
+  savedSearches = savedSearches.filter(s => s.name !== name);
+  localStorage.setItem('lb_saved_searches', JSON.stringify(savedSearches));
+  if (activeSearchName === name) activeSearchName = null;
+  renderSavedSearchTags();
+}
+
+function renderSavedSearchTags() {
+  const container = document.getElementById('savedSearches');
+  container.innerHTML = `<span style="font-size:11px;color:var(--muted);padding-top:2px">Quick views:</span>`;
+  savedSearches.forEach(s => {
+    const tag = document.createElement('span');
+    tag.className = 'saved-search-tag' + (activeSearchName === s.name ? ' active' : '');
+    tag.innerHTML = `${s.name}<span class="del" title="Delete">×</span>`;
+    tag.querySelector('.del').addEventListener('click', e => deleteSearch(s.name, e));
+    tag.addEventListener('click', () => applySearch(s));
+    container.appendChild(tag);
+  });
+  const btn = document.createElement('button');
+  btn.className = 'btn-save-search';
+  btn.textContent = '+ Save current filter';
+  btn.onclick = saveCurrentSearch;
+  container.appendChild(btn);
+}
+
+function populateGroupFilter() {
+  const groups = [...new Set(allAgents.map(a => a.group))].sort();
+  const container = document.getElementById('teamCheckboxes');
+  const existing = new Set([...container.querySelectorAll('.team-chk')].map(c => c.value));
+  groups.forEach(g => {
+    if (existing.has(g)) return;
+    const div = document.createElement('div');
+    div.className = 'team-picker-option';
+    const id = 'chk-' + g.replace(/\s+/g, '-');
+    div.innerHTML = `<input type="checkbox" class="team-chk" id="${id}" value="${g}"><label for="${id}" style="cursor:pointer">${g}</label>`;
+    div.querySelector('input').addEventListener('change', onTeamCheckChange);
+    container.appendChild(div);
+  });
+  // Remove stale groups
+  container.querySelectorAll('.team-chk').forEach(c => {
+    if (!groups.includes(c.value)) c.closest('.team-picker-option').remove();
+  });
+  updateTeamPickerLabel();
 }
 
 function sortBy(k) {
@@ -698,6 +877,7 @@ function applyPts() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.getElementById('reportDate').value = today();
+renderSavedSearchTags();
 setInterval(tick, 1000);
 tick(); // fires fetchSF and fetchVici immediately (secsLeft=0)
 </script>

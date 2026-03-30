@@ -74,7 +74,7 @@ app.get('/api/sf', async (req, res) => {
     if (!soql) return res.status(400).json({ error: 'Missing query param q' });
 
     // Only include users with Loan Officer or LOA profiles
-    const profileFilter = `OwnerId IN (SELECT Id FROM User WHERE Profile.Name IN ('Loan Officer', 'LOA') AND IsActive = true)`;
+    const profileFilter = `OwnerId IN (SELECT Id FROM User WHERE Profile.Name IN ('Loan Officer Profile', 'LOA') AND IsActive = true)`;
 
     if (soql.includes('FROM Lead') && soql.toUpperCase().includes('WHERE')) {
       soql = soql.replace(/FROM Lead WHERE/i, `FROM Lead WHERE ${profileFilter} AND`);
