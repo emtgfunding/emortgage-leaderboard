@@ -413,6 +413,12 @@
     <button class="btn-save-search" onclick="saveCurrentSearch()">+ Save current filter</button>
   </div>
 
+  <!-- Search bar -->
+  <div style="margin-bottom:10px">
+    <input type="text" id="agentSearch" placeholder="Search by agent name..." oninput="renderTable()"
+      style="width:260px;font-size:13px;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text)">
+  </div>
+
   <div class="filters-row">
     <label>Teams:</label>
     <div class="team-picker" id="teamPicker">
@@ -584,10 +590,10 @@ let viciData = [];
 function mergeAndRender() {
   const xfrMap = {}, pullMap = {}, appMap = {}, dialMap = {};
 
-  sfData.transfers.forEach(r => { if(r.Dialer_Agent__c) xfrMap[r.Dialer_Agent__c]  = (xfrMap[r.Dialer_Agent__c]||0)  + (r.cnt||0); });
-  sfData.pulls.forEach(r    => { if(r.Dialer_Agent__c) pullMap[r.Dialer_Agent__c] = (pullMap[r.Dialer_Agent__c]||0) + (r.cnt||0); });
-  sfData.apps.forEach(r     => { const k = r['Owner.Name']||r.OwnerName; if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0); });
-  viciData.forEach(a        => { dialMap[a.name] = a.dials; });
+  sfData.transfers.forEach(r => { if(r.Dialer_Agent__c) { const k=r.Dialer_Agent__c.toLowerCase(); xfrMap[k]  = (xfrMap[k]||0)  + (r.cnt||0); }});
+  sfData.pulls.forEach(r    => { if(r.Dialer_Agent__c) { const k=r.Dialer_Agent__c.toLowerCase(); pullMap[k] = (pullMap[k]||0) + (r.cnt||0); }});
+  sfData.apps.forEach(r     => { const k=(r['Owner.Name']||r.OwnerName||'').toLowerCase(); if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0); });
+  viciData.forEach(a        => { dialMap[a.name.toLowerCase()] = a.dials; });
 
   // Build agent list from SF users — always populated regardless of VICIdial
   const sfAgentNames = new Set([
@@ -596,28 +602,30 @@ function mergeAndRender() {
     ...Object.keys(appMap),
   ]);
 
-  // Start with SF users that have any activity today
+  // Start with SF users — match using lowercase keys for case-insensitive lookup
   const agentMap = {};
   sfData.users.forEach(u => {
+    const k = u.Name.toLowerCase();
     agentMap[u.Name] = {
       name:      u.Name,
       id:        u.Id,
       group:     u.UserRole?.Name || 'Unassigned',
-      dials:     dialMap[u.Name] || 0,
-      transfers: xfrMap[u.Name]  || 0,
-      pulls:     pullMap[u.Name] || 0,
-      apps:      appMap[u.Name]  || 0,
+      dials:     dialMap[k] || 0,
+      transfers: xfrMap[k]  || 0,
+      pulls:     pullMap[k] || 0,
+      apps:      appMap[k]  || 0,
     };
   });
 
   // Do NOT add agents from SF activity who aren't in the SF user list
   // This prevents non-SF users (e.g. Dialer_Agent__c free-text entries) from appearing
 
-  // Merge VICIdial dials for any agents already in map
+  // Merge VICIdial dials — match case-insensitively
   viciData.forEach(a => {
-    if (agentMap[a.name]) {
-      agentMap[a.name].dials = a.dials;
-      agentMap[a.name].group = a.group || agentMap[a.name].group;
+    const match = Object.values(agentMap).find(ag => ag.name.toLowerCase() === a.name.toLowerCase());
+    if (match) {
+      match.dials = a.dials;
+      match.group = a.group || match.group;
     }
   });
 
@@ -665,9 +673,11 @@ function updateSummary() {
 }
 
 function renderTable() {
-  const s  = document.getElementById('sf2').value;
+  const s      = document.getElementById('sf2').value;
+  const search = (document.getElementById('agentSearch')?.value || '').toLowerCase().trim();
   let data = allAgents.map(a => ({ ...a, pts: calcPts(a) })).filter(a => {
     if (selectedTeams.size > 0 && !selectedTeams.has(a.group)) return false;
+    if (search && !a.name.toLowerCase().includes(search)) return false;
     if (s === 'hit'   && a.pts < PTS.goal)                    return false;
     if (s === 'close' && (a.pts < PTS.goal*0.75||a.pts >= PTS.goal)) return false;
     if (s === 'miss'  && a.pts >= PTS.goal*0.75)              return false;

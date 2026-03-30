@@ -66,22 +66,12 @@ async function getViciCookie() {
   return cookie;
 }
 
-// ── /api/sf — SOQL proxy with profile filter ──────────────────────────────────
+// ── /api/sf — SOQL proxy ──────────────────────────────────────────────────────
 app.get('/api/sf', async (req, res) => {
   try {
     const { token, instance } = await getSFToken();
-    let soql = req.query.q;
+    const soql = req.query.q;
     if (!soql) return res.status(400).json({ error: 'Missing query param q' });
-
-    // Only include users with Loan Officer or LOA profiles
-    const profileFilter = `OwnerId IN (SELECT Id FROM User WHERE Profile.Name IN ('Loan Officer Profile', 'LOA') AND IsActive = true)`;
-
-    if (soql.includes('FROM Lead') && soql.toUpperCase().includes('WHERE')) {
-      soql = soql.replace(/FROM Lead WHERE/i, `FROM Lead WHERE ${profileFilter} AND`);
-    }
-    if (soql.includes('FROM Opportunity') && soql.toUpperCase().includes('WHERE')) {
-      soql = soql.replace(/FROM Opportunity WHERE/i, `FROM Opportunity WHERE ${profileFilter} AND`);
-    }
 
     const url = `${instance}/services/data/v59.0/query?q=${encodeURIComponent(soql)}`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
