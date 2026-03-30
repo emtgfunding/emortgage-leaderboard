@@ -23,8 +23,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
+app.use(express.static(path.join(__dirname)));
 // ── Salesforce token cache (reuse for 55min) ─────────────────────────────────
 let sfCache = { token: null, instance: null, expires: 0 };
 
