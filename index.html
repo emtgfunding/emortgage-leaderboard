@@ -536,9 +536,9 @@ async function fetchSF() {
   try {
     // Fetch all SF users with LO or LOA profile
     const soqlUsers = `SELECT Id, Name, UserRole.Name FROM User WHERE Profile.Name IN ('Loan Officer Profile', 'LOA') AND IsActive = true ORDER BY Name LIMIT 500`;
-    const soqlXfr   = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Dialer_Agent__c != null AND OwnerId NOT IN (SELECT Id FROM User WHERE Name LIKE '%Talk It Pro%' OR Name LIKE '%VDAD%') AND CreatedDate = TODAY GROUP BY Dialer_Agent__c LIMIT 500`;
-    const soqlPull  = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Date_of_Soft_Pull__c = TODAY AND Dialer_Agent__c != null GROUP BY Dialer_Agent__c LIMIT 500`;
-    const soqlApp   = `SELECT Owner.Name, COUNT(Id) cnt FROM Opportunity WHERE imbus__Initial_Disclosure_Date__c = TODAY GROUP BY Owner.Name LIMIT 500`;
+    const soqlXfr   = `SELECT Owner.Name ownerName, COUNT(Id) cnt FROM Lead WHERE OwnerId NOT IN (SELECT Id FROM User WHERE Name LIKE '%Talk It Pro%' OR Name LIKE '%VDAD%') AND CreatedDate = TODAY GROUP BY Owner.Name LIMIT 500`;
+    const soqlPull  = `SELECT Owner.Name ownerName, COUNT(Id) cnt FROM Lead WHERE Date_of_Soft_Pull__c = TODAY GROUP BY Owner.Name LIMIT 500`;
+    const soqlApp   = `SELECT Owner.Name ownerName, COUNT(Id) cnt FROM Opportunity WHERE imbus__Initial_Disclosure_Date__c = TODAY GROUP BY Owner.Name LIMIT 500`;
     const [users, xfr, pull, app] = await Promise.all([
       fetch('/api/sf?q='+encodeURIComponent(soqlUsers)).then(r=>r.json()),
       fetch('/api/sf?q='+encodeURIComponent(soqlXfr)).then(r=>r.json()),
@@ -590,9 +590,9 @@ let viciData = [];
 function mergeAndRender() {
   const xfrMap = {}, pullMap = {}, appMap = {}, dialMap = {};
 
-  sfData.transfers.forEach(r => { if(r.Dialer_Agent__c) { const k=r.Dialer_Agent__c.toLowerCase(); xfrMap[k]  = (xfrMap[k]||0)  + (r.cnt||0); }});
-  sfData.pulls.forEach(r    => { if(r.Dialer_Agent__c) { const k=r.Dialer_Agent__c.toLowerCase(); pullMap[k] = (pullMap[k]||0) + (r.cnt||0); }});
-  sfData.apps.forEach(r     => { const k=(r['Owner.Name']||r.OwnerName||'').toLowerCase(); if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0); });
+  sfData.transfers.forEach(r => { const k=(r.ownerName||r['Owner.Name']||'').toLowerCase(); if(k) xfrMap[k]  = (xfrMap[k]||0)  + (r.cnt||0); });
+  sfData.pulls.forEach(r    => { const k=(r.ownerName||r['Owner.Name']||'').toLowerCase(); if(k) pullMap[k] = (pullMap[k]||0) + (r.cnt||0); });
+  sfData.apps.forEach(r     => { const k=(r.ownerName||r['Owner.Name']||r.Name||'').toLowerCase(); if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0); });
   viciData.forEach(a        => { dialMap[a.name.toLowerCase()] = a.dials; });
 
   // Build agent list from SF users — always populated regardless of VICIdial
