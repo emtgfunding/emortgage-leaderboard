@@ -450,17 +450,24 @@ async function fetchSF() {
   if (sfFetching) return;
   sfFetching = true;
   setDot(document.getElementById('sfDot'), 'fetching');
-  const date = document.getElementById('reportDate').value || today();
   try {
-    const soqlXfr  = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Dialer_Agent__c != null AND OwnerId NOT IN (SELECT Id FROM User WHERE Name LIKE '%Talk It Pro%' OR Name LIKE '%VDAD%') AND CreatedDate = TODAY GROUP BY Dialer_Agent__c LIMIT 500`;
-    const soqlPull = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Date_of_Soft_Pull__c = TODAY AND Dialer_Agent__c != null GROUP BY Dialer_Agent__c LIMIT 500`;
-    const soqlApp  = `SELECT Owner.Name, COUNT(Id) cnt FROM Opportunity WHERE imbus__Initial_Disclosure_Date__c = TODAY GROUP BY Owner.Name LIMIT 500`;
-    const [xfr, pull, app] = await Promise.all([
+    // Fetch all SF users with LO or LOA profile
+    const soqlUsers = `SELECT Id, Name, UserRole.Name FROM User WHERE Profile.Name IN ('Loan Officer', 'LOA') AND IsActive = true ORDER BY Name LIMIT 500`;
+    const soqlXfr   = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Dialer_Agent__c != null AND OwnerId NOT IN (SELECT Id FROM User WHERE Name LIKE '%Talk It Pro%' OR Name LIKE '%VDAD%') AND CreatedDate = TODAY GROUP BY Dialer_Agent__c LIMIT 500`;
+    const soqlPull  = `SELECT Dialer_Agent__c, COUNT(Id) cnt FROM Lead WHERE Date_of_Soft_Pull__c = TODAY AND Dialer_Agent__c != null GROUP BY Dialer_Agent__c LIMIT 500`;
+    const soqlApp   = `SELECT Owner.Name, COUNT(Id) cnt FROM Opportunity WHERE imbus__Initial_Disclosure_Date__c = TODAY GROUP BY Owner.Name LIMIT 500`;
+    const [users, xfr, pull, app] = await Promise.all([
+      fetch('/api/sf?q='+encodeURIComponent(soqlUsers)).then(r=>r.json()),
       fetch('/api/sf?q='+encodeURIComponent(soqlXfr)).then(r=>r.json()),
       fetch('/api/sf?q='+encodeURIComponent(soqlPull)).then(r=>r.json()),
       fetch('/api/sf?q='+encodeURIComponent(soqlApp)).then(r=>r.json()),
     ]);
-    sfData = { transfers: Array.isArray(xfr)?xfr:[], pulls: Array.isArray(pull)?pull:[], apps: Array.isArray(app)?app:[] };
+    sfData = {
+      users:     Array.isArray(users) ? users : [],
+      transfers: Array.isArray(xfr)   ? xfr   : [],
+      pulls:     Array.isArray(pull)  ? pull  : [],
+      apps:      Array.isArray(app)   ? app   : [],
+    };
     sfLastTs = new Date();
     setDot(document.getElementById('sfDot'), 'ok');
   } catch(e) {
@@ -494,23 +501,58 @@ async function fetchVici() {
   mergeAndRender();
 }
 
-let sfData   = { transfers:[], pulls:[], apps:[] };
+let sfData   = { users:[], transfers:[], pulls:[], apps:[] };
 let viciData = [];
 
 function mergeAndRender() {
-  const xfrMap = {}, pullMap = {}, appMap = {};
+  const xfrMap = {}, pullMap = {}, appMap = {}, dialMap = {};
+
   sfData.transfers.forEach(r => { if(r.Dialer_Agent__c) xfrMap[r.Dialer_Agent__c]  = (xfrMap[r.Dialer_Agent__c]||0)  + (r.cnt||0); });
   sfData.pulls.forEach(r    => { if(r.Dialer_Agent__c) pullMap[r.Dialer_Agent__c] = (pullMap[r.Dialer_Agent__c]||0) + (r.cnt||0); });
-  sfData.apps.forEach(r     => {
-    const k = r['Owner.Name'] || r.OwnerName;
-    if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0);
+  sfData.apps.forEach(r     => { const k = r['Owner.Name']||r.OwnerName; if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0); });
+  viciData.forEach(a        => { dialMap[a.name] = a.dials; });
+
+  // Build agent list from SF users — always populated regardless of VICIdial
+  const sfAgentNames = new Set([
+    ...Object.keys(xfrMap),
+    ...Object.keys(pullMap),
+    ...Object.keys(appMap),
+  ]);
+
+  // Start with SF users that have any activity today
+  const agentMap = {};
+  sfData.users.forEach(u => {
+    agentMap[u.Name] = {
+      name:      u.Name,
+      id:        u.Id,
+      group:     u.UserRole?.Name || 'Unassigned',
+      dials:     dialMap[u.Name] || 0,
+      transfers: xfrMap[u.Name]  || 0,
+      pulls:     pullMap[u.Name] || 0,
+      apps:      appMap[u.Name]  || 0,
+    };
   });
-  allAgents = viciData.map(a => ({
-    ...a,
-    transfers: xfrMap[a.name] || xfrMap[a.id] || 0,
-    pulls:     pullMap[a.name] || pullMap[a.id] || 0,
-    apps:      appMap[a.name] || 0,
-  }));
+
+  // Also add any agents from SF activity not in the user list (name mismatch edge case)
+  sfAgentNames.forEach(name => {
+    if (!agentMap[name]) {
+      agentMap[name] = {
+        name, id: name, group: 'Other',
+        dials: dialMap[name]||0, transfers: xfrMap[name]||0,
+        pulls: pullMap[name]||0, apps: appMap[name]||0,
+      };
+    }
+  });
+
+  // Merge VICIdial dials for any agents already in map
+  viciData.forEach(a => {
+    if (agentMap[a.name]) {
+      agentMap[a.name].dials = a.dials;
+      agentMap[a.name].group = a.group || agentMap[a.name].group;
+    }
+  });
+
+  allAgents = Object.values(agentMap);
   populateGroupFilter();
   updateSummary();
   renderTable();
