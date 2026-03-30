@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>200-Point Leaderboard — eMortgage Funding</title>
+<title>Daily Ladder — eMortgage Funding</title>
 <style>
   :root {
     --bg:        #0f1117;
@@ -27,6 +27,25 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body.light-mode {
+    --bg:        #f4f5f7;
+    --surface:   #ffffff;
+    --surface2:  #eef0f4;
+    --border:    rgba(0,0,0,0.1);
+    --text:      #111827;
+    --muted:     #6b7280;
+    --green:     #16a34a;
+    --green-bg:  rgba(22,163,74,0.1);
+    --amber:     #d97706;
+    --amber-bg:  rgba(217,119,6,0.1);
+    --red:       #dc2626;
+    --red-bg:    rgba(220,38,38,0.08);
+    --blue:      #2563eb;
+    --gold:      #b45309;
+    --silver:    #6b7280;
+    --bronze:    #92400e;
+  }
 
   body {
     background: var(--bg);
@@ -141,7 +160,7 @@
 
   /* ── Summary cards ── */
   .summary-grid {
-    display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+    display: grid; grid-template-columns: repeat(7, minmax(0,1fr));
     gap: 12px; margin-bottom: 20px;
   }
   .s-card {
@@ -307,7 +326,7 @@
   /* ── Mobile ── */
   @media (max-width: 600px) {
     .header, .main, .refresh-strip, .footer { padding-left: 14px; padding-right: 14px; }
-    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .summary-grid { grid-template-columns: repeat(3, 1fr); }
     .summary-grid .s-card:last-child { grid-column: span 2; }
   }
 </style>
@@ -319,7 +338,7 @@
   <div class="header-brand">
     <div class="header-logo">EM</div>
     <div>
-      <div class="header-title">200-Point Leaderboard</div>
+      <div class="header-title">Daily Ladder</div>
       <div class="header-sub" id="headerSub">eMortgage Funding — Daily Effort Tracker</div>
     </div>
   </div>
@@ -327,6 +346,7 @@
     <input type="date" id="reportDate">
     <button class="btn btn-paused" id="btnPause" onclick="togglePause()">Pause</button>
     <button class="btn" onclick="forceRefresh()">Refresh now</button>
+    <button class="btn" id="btnTheme" onclick="toggleTheme()">Light mode</button>
   </div>
 </div>
 
@@ -384,8 +404,9 @@
   <!-- Summary cards -->
   <div class="summary-grid">
     <div class="s-card">
-      <div class="s-label">Active agents</div>
+      <div class="s-label">Active LOs</div>
       <div class="s-val" id="sAgents">—</div>
+      <div class="s-sub" id="sAgentsSub"></div>
     </div>
     <div class="s-card">
       <div class="s-label">Hit goal</div>
@@ -399,6 +420,14 @@
     <div class="s-card">
       <div class="s-label">Total transfers</div>
       <div class="s-val s-blue" id="sXfrs">—</div>
+    </div>
+    <div class="s-card">
+      <div class="s-label">Soft pulls</div>
+      <div class="s-val" id="sPulls">—</div>
+    </div>
+    <div class="s-card">
+      <div class="s-label">Apps out</div>
+      <div class="s-val" id="sApps">—</div>
     </div>
     <div class="s-card">
       <div class="s-label">Avg score</div>
@@ -495,7 +524,7 @@ const VICI_INTERVAL = 600;
 
 let PTS = { dial:1, xfr:10, app:100, pullN:3, pullPts:100, goal:200 };
 let allAgents = [];
-let sortKey = 'pts', sortDir = -1;
+let sortKey = 'pts', sortDir = -1; // default: highest points first
 let paused = false;
 let sfSecsLeft = 0, viciSecsLeft = 0;
 let sfFetching = false, viciFetching = false;
@@ -536,7 +565,7 @@ async function fetchSF() {
   try {
     // Fetch all SF users with LO or LOA profile
     const soqlUsers = `SELECT Id, Name, UserRole.Name FROM User WHERE Profile.Name IN ('Loan Officer Profile', 'LOA') AND IsActive = true ORDER BY Name LIMIT 500`;
-    const soqlXfr   = `SELECT Owner.Name ownerName, COUNT(Id) cnt FROM Lead WHERE OwnerId NOT IN (SELECT Id FROM User WHERE Name LIKE '%Talk It Pro%' OR Name LIKE '%VDAD%') AND CreatedDate = TODAY GROUP BY Owner.Name LIMIT 500`;
+    const soqlXfr   = `SELECT Owner.Name ownerName, COUNT(Id) cnt FROM Lead WHERE Dialer_Agent__c != null AND Owner.Name != 'Talk It Pro' AND CreatedDate = TODAY GROUP BY Owner.Name LIMIT 500`;
     const soqlPull  = `SELECT Owner.Name ownerName, COUNT(Id) cnt FROM Lead WHERE Date_of_Soft_Pull__c = TODAY GROUP BY Owner.Name LIMIT 500`;
     const soqlApp   = `SELECT Owner.Name ownerName, COUNT(Id) cnt FROM Opportunity WHERE imbus__Initial_Disclosure_Date__c = TODAY GROUP BY Owner.Name LIMIT 500`;
     const [users, xfr, pull, app] = await Promise.all([
@@ -658,14 +687,18 @@ function tick() {
 function updateSummary() {
   const scored  = allAgents.map(a => ({ ...a, pts: calcPts(a) }));
   const active  = allAgents.filter(a => a.dials>0||a.transfers>0||a.apps>0||a.pulls>0).length;
+  const total   = allAgents.length;
   const hit     = scored.filter(a => a.pts >= PTS.goal).length;
   const avgPts  = scored.length ? Math.round(scored.reduce((s,a) => s+a.pts,0)/scored.length) : 0;
-  document.getElementById('sAgents').textContent = active;
-  document.getElementById('sHit').textContent    = hit;
-  document.getElementById('sHitPct').textContent = allAgents.length ? Math.round(hit/allAgents.length*100)+'% of team' : '';
-  document.getElementById('sDials').textContent  = allAgents.reduce((s,a)=>s+a.dials,0).toLocaleString();
-  document.getElementById('sXfrs').textContent   = allAgents.reduce((s,a)=>s+a.transfers,0).toLocaleString();
-  document.getElementById('sAvg').textContent    = avgPts;
+  document.getElementById('sAgents').textContent    = `${active}/${total}`;
+  document.getElementById('sAgentsSub').textContent = 'active / total LOs';
+  document.getElementById('sHit').textContent       = `${hit}/${total}`;
+  document.getElementById('sHitPct').textContent    = total ? Math.round(hit/total*100)+'% of team' : '';
+  document.getElementById('sDials').textContent     = allAgents.reduce((s,a)=>s+a.dials,0).toLocaleString();
+  document.getElementById('sXfrs').textContent      = allAgents.reduce((s,a)=>s+a.transfers,0).toLocaleString();
+  document.getElementById('sPulls').textContent     = allAgents.reduce((s,a)=>s+a.pulls,0).toLocaleString();
+  document.getElementById('sApps').textContent      = allAgents.reduce((s,a)=>s+a.apps,0).toLocaleString();
+  document.getElementById('sAvg').textContent       = avgPts;
 
   const date = document.getElementById('reportDate').value || today();
   const ds = new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
@@ -886,7 +919,19 @@ function applyPts() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light-mode');
+  document.getElementById('btnTheme').textContent = isLight ? 'Dark mode' : 'Light mode';
+  localStorage.setItem('lb_theme', isLight ? 'light' : 'dark');
+}
+
 document.getElementById('reportDate').value = today();
+if (localStorage.getItem('lb_theme') === 'light') {
+  document.body.classList.add('light-mode');
+  document.getElementById('btnTheme').textContent = 'Dark mode';
+}
+const siPts = document.getElementById('si-pts');
+if (siPts) siPts.textContent = '↓'; // show default sort indicator
 renderSavedSearchTags();
 setInterval(tick, 1000);
 tick(); // fires fetchSF and fetchVici immediately (secsLeft=0)
