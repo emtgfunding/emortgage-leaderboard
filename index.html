@@ -599,15 +599,22 @@ async function syncDials() {
   const btn = document.getElementById('btnViciConnect');
   btn.textContent = 'Syncing...';
   const date = document.getElementById('reportDate').value || today();
-  const reportUrl = `https://emortgage.talkitpro.com/vicidial/AST_agent_performance_detail.php?DB=0&query_date=${date}&query_time=00:00:00&end_date=${date}&end_time=23:59:59&group[]=--ALL--&user_group[]=--ALL--&users[]=--ALL--&report_display_type=TEXT&shift=--&SUBMIT=SUBMIT`;
+
   try {
-    const r = await fetch(reportUrl, { credentials: 'include' });
+    const body = new URLSearchParams({
+      DB:'0', query_date:date, query_time:'00:00:00',
+      end_date:date, end_time:'23:59:59',
+      'group[]':'--ALL--', 'user_group[]':'--ALL--', 'users[]':'--ALL--',
+      report_display_type:'TEXT', shift:'--', SUBMIT:'SUBMIT'
+    });
+    const r = await fetch('https://emortgage.talkitpro.com/vicidial/AST_agent_performance_detail.php', {
+      method: 'POST', body, credentials: 'include', mode: 'cors'
+    });
     const html = await r.text();
     const pre = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
-    if (!pre) throw new Error('Session expired — please log into VICIdial first');
+    if (!pre) throw new Error('Not logged into VICIdial or CORS blocked');
     const agents = await parseViciReport(pre[1]);
-    if (!agents.length) throw new Error('No agents found in report');
-    // Push to Railway server cache
+    if (!agents.length) throw new Error('No agents found');
     await fetch('/api/vici-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -621,10 +628,12 @@ async function syncDials() {
     btn.style.color = 'var(--green)';
     mergeAndRender();
   } catch(e) {
-    btn.textContent = 'Sync failed — open VICIdial first';
-    btn.style.borderColor = 'var(--red)';
-    btn.style.color = 'var(--red)';
-    console.error('VICIdial sync error:', e.message);
+    // CORS will always block cross-origin fetch from leaderboard
+    // Show instructions to open VICIdial first
+    btn.textContent = 'Open VICIdial tab first';
+    btn.style.borderColor = 'var(--amber)';
+    btn.style.color = 'var(--amber)';
+    console.error(e.message);
   }
 }
 
