@@ -108,11 +108,22 @@ app.get('/api/sf', async (req, res) => {
   }
 });
 
+// ── OPTIONS preflight for vici-push ──────────────────────────────────────────
+app.options('/api/vici-push', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(200);
+});
+
 // ── In-memory dialer cache (populated by bookmarklet push) ───────────────────
 let dialerCache = { agents: [], date: null, updatedAt: null };
 
 // ── /api/vici-push — bookmarklet POSTs agent data here ───────────────────────
 app.post('/api/vici-push', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   const { agents, date } = req.body;
   if (!Array.isArray(agents) || !agents.length) {
     return res.status(400).json({ error: 'No agents in payload' });
