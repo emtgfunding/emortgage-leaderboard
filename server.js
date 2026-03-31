@@ -108,11 +108,29 @@ app.get('/api/sf', async (req, res) => {
   }
 });
 
-// ── /api/vici — VICIdial non-agent API ───────────────────────────────────────
-app.get('/api/vici', async (req, res) => {
-  try {
-    const date = req.query.date || new Date().toISOString().split('T')[0];
+// ── In-memory dialer cache (populated by bookmarklet push) ───────────────────
+let dialerCache = { agents: [], date: null, updatedAt: null };
 
+// ── /api/vici-push — bookmarklet POSTs agent data here ───────────────────────
+app.post('/api/vici-push', (req, res) => {
+  const { agents, date } = req.body;
+  if (!Array.isArray(agents) || !agents.length) {
+    return res.status(400).json({ error: 'No agents in payload' });
+  }
+  dialerCache = { agents, date: date || new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString() };
+  console.log(`[VICIdial] Push: ${agents.length} agents for ${dialerCache.date}`);
+  res.json({ ok: true, agents: agents.length, date: dialerCache.date });
+});
+
+// ── /api/vici — serve cached dialer data OR try scrape ───────────────────────
+app.get('/api/vici', async (req, res) => {
+  const date = req.query.date || new Date().toISOString().split('T')[0];
+  // Return cached data if available for today
+  if (dialerCache.agents.length > 0 && dialerCache.date === date) {
+    return res.json(dialerCache.agents);
+  }
+
+  try {
     // Use VICIdial non-agent API to get agent stats
     const url = `${VICI_BASE}/vicidial/non_agent_api.php?` + new URLSearchParams({
       source:   'test',

@@ -346,7 +346,7 @@
     <input type="date" id="reportDate">
     <button class="btn btn-paused" id="btnPause" onclick="togglePause()">Pause</button>
     <button class="btn" onclick="forceRefresh()">Refresh now</button>
-    <button class="btn" id="btnViciConnect" onclick="connectVici()" title="Connect VICIdial session">Dialer: connect</button>
+    <button class="btn" id="btnViciConnect" onclick="syncDials()">Sync dials</button>
     <button class="btn" id="btnTheme" onclick="toggleTheme()">Light mode</button>
   </div>
 </div>
@@ -592,8 +592,40 @@ async function fetchSF() {
 }
 
 async function getViciSessionCookie() {
-  // Returns stored VICIdial cookie (set by the bookmarklet or manual entry)
-  return sessionStorage.getItem('vici_session') || localStorage.getItem('vici_session') || null;
+  return null; // not used — we use syncDials instead
+}
+
+async function syncDials() {
+  const btn = document.getElementById('btnViciConnect');
+  btn.textContent = 'Syncing...';
+  const date = document.getElementById('reportDate').value || today();
+  const reportUrl = `https://emortgage.talkitpro.com/vicidial/AST_agent_performance_detail.php?DB=0&query_date=${date}&query_time=00:00:00&end_date=${date}&end_time=23:59:59&group[]=--ALL--&user_group[]=--ALL--&users[]=--ALL--&report_display_type=TEXT&shift=--&SUBMIT=SUBMIT`;
+  try {
+    const r = await fetch(reportUrl, { credentials: 'include' });
+    const html = await r.text();
+    const pre = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+    if (!pre) throw new Error('Session expired — please log into VICIdial first');
+    const agents = await parseViciReport(pre[1]);
+    if (!agents.length) throw new Error('No agents found in report');
+    // Push to Railway server cache
+    await fetch('/api/vici-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agents, date })
+    });
+    viciData = agents;
+    viciLastTs = new Date();
+    setDot(document.getElementById('viciDot'), 'ok');
+    btn.textContent = `Dials synced (${agents.length})`;
+    btn.style.borderColor = 'var(--green)';
+    btn.style.color = 'var(--green)';
+    mergeAndRender();
+  } catch(e) {
+    btn.textContent = 'Sync failed — open VICIdial first';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = 'var(--red)';
+    console.error('VICIdial sync error:', e.message);
+  }
 }
 
 async function parseViciReport(text) {
@@ -993,23 +1025,6 @@ function applyPts() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-function connectVici() {
-  const cookie = prompt(
-    'Paste your VICIdial session cookie here.\n\n' +
-    'How to get it:\n' +
-    '1. Open emortgage.talkitpro.com in Chrome\n' +
-    '2. Press F12 → Application tab → Cookies → http://emortgage.talkitpro.com\n' +
-    '3. Copy the "PHPSESSID" cookie value and paste it below:'
-  );
-  if (!cookie || !cookie.trim()) return;
-  const val = cookie.trim().startsWith('PHPSESSID=') ? cookie.trim() : `PHPSESSID=${cookie.trim()}`;
-  localStorage.setItem('vici_session', val);
-  document.getElementById('btnViciConnect').textContent = 'Dialer: connected';
-  document.getElementById('btnViciConnect').style.borderColor = 'var(--green)';
-  document.getElementById('btnViciConnect').style.color = 'var(--green)';
-  viciSecsLeft = 0; // trigger immediate refresh
-}
-
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light-mode');
   document.getElementById('btnTheme').textContent = isLight ? 'Dark mode' : 'Light mode';
@@ -1020,11 +1035,6 @@ document.getElementById('reportDate').value = today();
 if (localStorage.getItem('lb_theme') !== 'dark') {
   document.body.classList.add('light-mode');
   document.getElementById('btnTheme').textContent = 'Dark mode';
-}
-if (localStorage.getItem('vici_session')) {
-  document.getElementById('btnViciConnect').textContent = 'Dialer: connected';
-  document.getElementById('btnViciConnect').style.borderColor = 'var(--green)';
-  document.getElementById('btnViciConnect').style.color = 'var(--green)';
 }
 const siPts = document.getElementById('si-pts');
 if (siPts) siPts.textContent = '↓'; // show default sort indicator
