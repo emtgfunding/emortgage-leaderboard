@@ -56,11 +56,35 @@ let viciCookie = { value: null, expires: 0 };
 async function getViciCookie() {
   if (viciCookie.value && Date.now() < viciCookie.expires) return viciCookie.value;
   const body = new URLSearchParams({ user: VICI_USER, pass: VICI_PASS, ACTION: 'Login' });
-  const r = await fetch(`${VICI_BASE}/vicidial/admin.php`, {
-    method: 'POST', body, redirect: 'manual',
-  });
-  const raw = r.headers.raw()['set-cookie'] || [];
-  const cookie = raw.map(c => c.split(';')[0]).join('; ');
+
+  // Try redirect: manual first (captures Set-Cookie on redirect response)
+  let cookie = '';
+  try {
+    const r = await fetch(`${VICI_BASE}/vicidial/admin.php`, {
+      method: 'POST', body, redirect: 'manual',
+    });
+    const raw = r.headers.raw()['set-cookie'] || [];
+    cookie = raw.map(c => c.split(';')[0]).join('; ');
+  } catch(e) {}
+
+  // Fallback: follow redirects and grab cookie from response headers
+  if (!cookie) {
+    const r = await fetch(`${VICI_BASE}/vicidial/admin.php`, {
+      method: 'POST', body, redirect: 'follow',
+    });
+    const raw = r.headers.raw()['set-cookie'] || [];
+    cookie = raw.map(c => c.split(';')[0]).join('; ');
+  }
+
+  // Fallback: try GET login
+  if (!cookie) {
+    const r = await fetch(`${VICI_BASE}/vicidial/admin.php?user=${VICI_USER}&pass=${VICI_PASS}&ACTION=Login`, {
+      redirect: 'manual',
+    });
+    const raw = r.headers.raw()['set-cookie'] || [];
+    cookie = raw.map(c => c.split(';')[0]).join('; ');
+  }
+
   if (!cookie) throw new Error('VICIdial login failed');
   viciCookie = { value: cookie, expires: Date.now() + 4 * 60 * 60 * 1000 };
   return cookie;
