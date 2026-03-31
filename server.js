@@ -108,42 +108,80 @@ app.get('/api/sf', async (req, res) => {
   }
 });
 
-// ── /api/vici — VICIdial report proxy ────────────────────────────────────────
+// ── /api/vici — VICIdial non-agent API ───────────────────────────────────────
 app.get('/api/vici', async (req, res) => {
   try {
-    const cookie = await getViciCookie();
-    const date   = req.query.date || new Date().toISOString().split('T')[0];
-    const url = `${VICI_BASE}/vicidial/AST_agent_performance_detail.php?` + new URLSearchParams({
-      DB: '0',
-      query_date: date, query_time: '00:00:00',
-      end_date:   date, end_time:   '23:59:59',
-      'group[]':       '--ALL--',
-      'user_group[]':  '--ALL--',
-      'users[]':       '--ALL--',
-      report_display_type: 'TEXT',
-      shift: '--',
-      SUBMIT: 'SUBMIT',
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+
+    // Use VICIdial non-agent API to get agent stats
+    const url = `${VICI_BASE}/vicidial/non_agent_api.php?` + new URLSearchParams({
+      source:   'test',
+      user:     VICI_USER,
+      pass:     VICI_PASS,
+      function: 'agent_stats',
+      query_date: date,
+      end_date:   date,
     });
-    const r = await fetch(url, { headers: { Cookie: cookie } });
-    const html = await r.text();
-    const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
-    const text = preMatch ? preMatch[1] : html;
+
+    const r = await fetch(url, { timeout: 30000 });
+    const text = await r.text();
+
+    // If API not available, fall back to report scraping
+    if (text.includes('ERROR') || text.includes('invalid')) {
+      throw new Error('API returned: ' + text.substring(0, 100));
+    }
+
+    // Parse pipe-delimited response: user|calls|...
     const agents = [];
     for (const line of text.split('\n')) {
-      if (!line.startsWith('|')) continue;
-      const cols = line.split('|').map(c => c.trim());
-      if (cols.length < 7) continue;
-      const name  = cols[1];
-      const id    = cols[2];
-      const group = cols[3];
-      const calls = parseInt(cols[5]);
-      if (!name || name === 'USER NAME' || isNaN(calls)) continue;
-      agents.push({ name, id, group, dials: calls });
+      const parts = line.split('|');
+      if (parts.length < 3) continue;
+      const id = parts[0]?.trim();
+      const calls = parseInt(parts[1]);
+      if (!id || isNaN(calls)) continue;
+      agents.push({ name: id, id, group: 'Agents', dials: calls });
     }
-    res.json(agents);
-  } catch (e) {
-    console.error('VICIdial error:', e.message);
-    res.status(500).json({ error: e.message });
+
+    if (agents.length > 0) return res.json(agents);
+    throw new Error('No agents parsed from API');
+
+  } catch(apiErr) {
+    // Fall back to session-based report scraping
+    try {
+      const cookie = await getViciCookie();
+      const date   = req.query.date || new Date().toISOString().split('T')[0];
+      const url = `${VICI_BASE}/vicidial/AST_agent_performance_detail.php?` + new URLSearchParams({
+        DB: '0',
+        query_date: date, query_time: '00:00:00',
+        end_date:   date, end_time:   '23:59:59',
+        'group[]':       '--ALL--',
+        'user_group[]':  '--ALL--',
+        'users[]':       '--ALL--',
+        report_display_type: 'TEXT',
+        shift: '--',
+        SUBMIT: 'SUBMIT',
+      });
+      const r = await fetch(url, { headers: { Cookie: cookie } });
+      const html = await r.text();
+      const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+      const text = preMatch ? preMatch[1] : html;
+      const agents = [];
+      for (const line of text.split('\n')) {
+        if (!line.startsWith('|')) continue;
+        const cols = line.split('|').map(c => c.trim());
+        if (cols.length < 7) continue;
+        const name  = cols[1];
+        const id    = cols[2];
+        const group = cols[3];
+        const calls = parseInt(cols[5]);
+        if (!name || name === 'USER NAME' || isNaN(calls)) continue;
+        agents.push({ name, id, group, dials: calls });
+      }
+      res.json(agents);
+    } catch (e) {
+      console.error('VICIdial error:', e.message);
+      res.status(500).json({ error: e.message });
+    }
   }
 });
 
