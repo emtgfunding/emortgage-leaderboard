@@ -147,7 +147,25 @@ app.get('/api/vici', async (req, res) => {
   }
 });
 
-// ── /api/status ───────────────────────────────────────────────────────────────
+// ── /api/vici-debug — inspect login response ─────────────────────────────────
+app.get('/api/vici-debug', async (req, res) => {
+  try {
+    const body = new URLSearchParams({ user: VICI_USER, pass: VICI_PASS, ACTION: 'Login' });
+    const r = await fetch(`${VICI_BASE}/vicidial/admin.php`, {
+      method: 'POST', body, redirect: 'manual',
+    });
+    const raw = r.headers.raw();
+    const status = r.status;
+    const location = r.headers.get('location');
+    const cookies = raw['set-cookie'] || [];
+    const bodyText = await r.text().catch(() => '');
+    res.json({ status, location, cookies, bodySnippet: bodyText.substring(0, 500) });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get('/api/status', (req, res) => {
   res.json({
     sf_configured:      !!(SF_CLIENT_ID),
