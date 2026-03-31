@@ -185,7 +185,42 @@ app.get('/api/vici', async (req, res) => {
   }
 });
 
-// ── /api/vici-debug — inspect login response ─────────────────────────────────
+// ── /api/vici-proxy — browser passes its own VICIdial session cookie ─────────
+// Browser calls this with header X-Vici-Cookie containing its own session cookie
+// Server forwards the request to VICIdial using that cookie — bypasses login entirely
+app.get('/api/vici-proxy', async (req, res) => {
+  try {
+    const viciCookieHeader = req.headers['x-vici-cookie'];
+    if (!viciCookieHeader) return res.status(400).json({ error: 'No X-Vici-Cookie header' });
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+    const url = `${VICI_BASE}/vicidial/AST_agent_performance_detail.php?` + new URLSearchParams({
+      DB: '0', query_date: date, query_time: '00:00:00',
+      end_date: date, end_time: '23:59:59',
+      'group[]': '--ALL--', 'user_group[]': '--ALL--', 'users[]': '--ALL--',
+      report_display_type: 'TEXT', shift: '--', SUBMIT: 'SUBMIT',
+    });
+    const r = await fetch(url, { headers: { Cookie: viciCookieHeader } });
+    const html = await r.text();
+    const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+    const text = preMatch ? preMatch[1] : html;
+    const agents = [];
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('|')) continue;
+      const cols = line.split('|').map(c => c.trim());
+      if (cols.length < 7) continue;
+      const name = cols[1], id = cols[2], group = cols[3];
+      const calls = parseInt(cols[5]);
+      if (!name || name === 'USER NAME' || isNaN(calls)) continue;
+      agents.push({ name, id, group, dials: calls });
+    }
+    if (agents.length === 0) return res.status(401).json({ error: 'No agents — cookie may be expired or invalid' });
+    res.json(agents);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get('/api/vici-debug', async (req, res) => {
   try {
     const body = new URLSearchParams({ user: VICI_USER, pass: VICI_PASS, ACTION: 'Login' });
