@@ -133,7 +133,7 @@ app.post('/api/vici-push', (req, res) => {
   res.json({ ok: true, agents: agents.length, date: dialerCache.date });
 });
 
-// ── /api/vici — serve cached data OR fetch report directly ───────────────────
+// ── /api/vici — fetch from realtime endpoint (no login needed) ────────────────
 app.get('/api/vici', async (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0];
 
@@ -142,40 +142,43 @@ app.get('/api/vici', async (req, res) => {
     return res.json(dialerCache.agents);
   }
 
-  // Try fetching the report directly — VICIdial accepts user/pass in POST body
   try {
-    const body = new URLSearchParams({
-      DB: '0',
-      query_date: date, query_time: '00:00:00',
-      end_date: date,   end_time: '23:59:59',
-      'group[]': '--ALL--', 'user_group[]': '--ALL--', 'users[]': '--ALL--',
-      report_display_type: 'TEXT', shift: '--', SUBMIT: 'SUBMIT',
-      // Try passing credentials directly in the report request
-      user: VICI_USER, pass: VICI_PASS,
-    });
-    const r = await fetch(`${VICI_BASE}/vicidial/AST_agent_performance_detail.php`, {
-      method: 'POST', body,
-    });
-    const html = await r.text();
-    const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
-    if (preMatch) {
-      const agents = [];
-      for (const line of preMatch[1].split('\n')) {
-        if (!line.startsWith('|')) continue;
-        const cols = line.split('|').map(c => c.trim());
-        if (cols.length < 7) continue;
-        const calls = parseInt(cols[5]);
-        if (!cols[1] || cols[1] === 'USER NAME' || isNaN(calls)) continue;
-        agents.push({ name: cols[1], id: cols[2], group: cols[3], dials: calls });
+    // AST_timeonVDADall.php is accessible without a full admin login
+    // It returns pipe-delimited agent data including CALLS count
+    const r = await fetch(`${VICI_BASE}/vicidial/AST_timeonVDADall.php`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Cookie': `VDAD_user=${VICI_USER}; VDAD_pass=${VICI_PASS}`,
       }
-      if (agents.length > 0) {
-        dialerCache = { agents, date, updatedAt: new Date().toISOString() };
-        return res.json(agents);
-      }
+    });
+    const text = await r.text();
+
+    // Parse pipe-delimited rows: | SIP/XXX | Agent Name + | sessionid | STATUS | MM:SS | CAMPAIGN | CALLS |
+    const agents = [];
+    const seen = new Set();
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('|')) continue;
+      const cols = line.split('|').map(c => c.trim());
+      if (cols.length < 8) continue;
+      const name = cols[2]?.replace(/\s*\+\s*$/, '').trim(); // remove trailing +
+      const callsStr = cols[7]?.trim();
+      const calls = parseInt(callsStr);
+      if (!name || name === 'USER SHOW ID INFO' || isNaN(calls)) continue;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      agents.push({ name, id: name, group: 'Agents', dials: calls });
     }
-    throw new Error('No agents in report response');
+
+    if (agents.length > 0) {
+      dialerCache = { agents, date, updatedAt: new Date().toISOString() };
+      console.log(`[VICIdial] Realtime: ${agents.length} agents`);
+      return res.json(agents);
+    }
+    throw new Error('No agents parsed from realtime report');
   } catch(e) {
-    console.error('VICIdial direct fetch error:', e.message);
+    console.error('VICIdial realtime error:', e.message);
+    // Return cached data if available even if stale
+    if (dialerCache.agents.length > 0) return res.json(dialerCache.agents);
     res.status(500).json({ error: e.message });
   }
 });
