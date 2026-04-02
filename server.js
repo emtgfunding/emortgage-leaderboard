@@ -133,54 +133,50 @@ app.post('/api/vici-push', (req, res) => {
   res.json({ ok: true, agents: agents.length, date: dialerCache.date });
 });
 
-// ── /api/vici — fetch from realtime endpoint (no login needed) ────────────────
+// ── /api/vici — serve cached data, fall back to stale cache, then try realtime ─
 app.get('/api/vici', async (req, res) => {
   const date = req.query.date || new Date().toISOString().split('T')[0];
 
-  // Return cached data if fresh for today
+  // Return fresh cache for today
   if (dialerCache.agents.length > 0 && dialerCache.date === date) {
     return res.json(dialerCache.agents);
   }
 
+  // Try realtime endpoint (no login needed)
   try {
-    // AST_timeonVDADall.php is accessible without a full admin login
-    // It returns pipe-delimited agent data including CALLS count
     const r = await fetch(`${VICI_BASE}/vicidial/AST_timeonVDADall.php`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Cookie': `VDAD_user=${VICI_USER}; VDAD_pass=${VICI_PASS}`,
-      }
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     });
     const text = await r.text();
-
-    // Parse pipe-delimited rows: | SIP/XXX | Agent Name + | sessionid | STATUS | MM:SS | CAMPAIGN | CALLS |
     const agents = [];
     const seen = new Set();
     for (const line of text.split('\n')) {
       if (!line.startsWith('|')) continue;
       const cols = line.split('|').map(c => c.trim());
       if (cols.length < 8) continue;
-      const name = cols[2]?.replace(/\s*\+\s*$/, '').trim(); // remove trailing +
-      const callsStr = cols[7]?.trim();
-      const calls = parseInt(callsStr);
+      const name = cols[2]?.replace(/\s*\+\s*$/, '').trim();
+      const calls = parseInt(cols[7]);
       if (!name || name === 'USER SHOW ID INFO' || isNaN(calls)) continue;
       if (seen.has(name)) continue;
       seen.add(name);
       agents.push({ name, id: name, group: 'Agents', dials: calls });
     }
-
     if (agents.length > 0) {
       dialerCache = { agents, date, updatedAt: new Date().toISOString() };
       console.log(`[VICIdial] Realtime: ${agents.length} agents`);
       return res.json(agents);
     }
-    throw new Error('No agents parsed from realtime report');
   } catch(e) {
     console.error('VICIdial realtime error:', e.message);
-    // Return cached data if available even if stale
-    if (dialerCache.agents.length > 0) return res.json(dialerCache.agents);
-    res.status(500).json({ error: e.message });
   }
+
+  // Return stale cache if we have anything at all
+  if (dialerCache.agents.length > 0) {
+    console.log(`[VICIdial] Serving stale cache (${dialerCache.date})`);
+    return res.json(dialerCache.agents);
+  }
+
+  res.status(500).json({ error: 'No VICIdial data available — please click Sync dials' });
 });
 
 // ── /api/vici-proxy — browser passes its own VICIdial session cookie ─────────
