@@ -116,8 +116,17 @@ app.options('/api/vici-push', (req, res) => {
   res.sendStatus(200);
 });
 
-// ── In-memory dialer cache (populated by bookmarklet push) ───────────────────
+const fs   = require('fs');
+const CACHE_FILE = '/tmp/vici-cache.json';
+
+// ── In-memory dialer cache with file persistence ──────────────────────────────
 let dialerCache = { agents: [], date: null, updatedAt: null };
+try {
+  if (fs.existsSync(CACHE_FILE)) {
+    dialerCache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    console.log(`[VICIdial] Loaded cache: ${dialerCache.agents.length} agents for ${dialerCache.date}`);
+  }
+} catch(e) { console.log('[VICIdial] No cache file found'); }
 
 // ── /api/vici-push — bookmarklet POSTs agent data here ───────────────────────
 app.post('/api/vici-push', (req, res) => {
@@ -129,6 +138,7 @@ app.post('/api/vici-push', (req, res) => {
     return res.status(400).json({ error: 'No agents in payload' });
   }
   dialerCache = { agents, date: date || new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString() };
+  try { fs.writeFileSync(CACHE_FILE, JSON.stringify(dialerCache)); } catch(e) {}
   console.log(`[VICIdial] Push: ${agents.length} agents for ${dialerCache.date}`);
   res.json({ ok: true, agents: agents.length, date: dialerCache.date });
 });
