@@ -346,7 +346,8 @@
     <input type="date" id="reportDate">
     <button class="btn btn-paused" id="btnPause" onclick="togglePause()">Pause</button>
     <button class="btn" onclick="forceRefresh()">Refresh now</button>
-    <button class="btn" id="btnViciConnect" onclick="syncDials()">Sync dials</button>
+    <button class="btn" id="btnViciConnect" onclick="syncDialsFromVici()">Sync dials</button>
+    <input type="file" id="csvImport" accept=".csv,.txt" style="display:none" onchange="importDialsFile(this)">
     <button class="btn" id="btnTheme" onclick="toggleTheme()">Light mode</button>
   </div>
 </div>
@@ -595,11 +596,83 @@ async function getViciSessionCookie() {
   return null; // not used — we use syncDials instead
 }
 
-async function syncDials() {
+async function importDialsFile(input) {
+  const btn = document.getElementById('btnViciConnect');
+  const file = input.files[0];
+  if (!file) return;
+  btn.textContent = 'Importing...';
+  const text = await file.text();
+  const date = document.getElementById('reportDate').value || today();
+  let agents = [];
+
+  // Try pipe-delimited TEXT format (VICIdial report TEXT mode)
+  // | Name | ID | Group | MostRecentGroup | Calls | ...
+  if (text.includes('|')) {
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('|')) continue;
+      const cols = line.split('|').map(c => c.trim());
+      if (cols.length < 7) continue;
+      const calls = parseInt(cols[5]);
+      if (!cols[1] || cols[1] === 'USER NAME' || isNaN(calls)) continue;
+      agents.push({ name: cols[1], id: cols[2], group: cols[3], dials: calls });
+    }
+  }
+
+  // Try CSV format (VICIdial DOWNLOAD link)
+  // "USER NAME","ID","CURRENT USER GROUP",...,"CALLS",...
+  if (!agents.length && text.includes(',')) {
+    const lines = text.split('\n');
+    let callsCol = -1;
+    let nameCol = 0, idCol = 1, groupCol = 2;
+    for (let i = 0; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.replace(/"/g,'').trim());
+      if (cols.some(c => c === 'CALLS' || c === 'Calls')) {
+        callsCol = cols.findIndex(c => c === 'CALLS' || c === 'Calls');
+        nameCol  = cols.findIndex(c => c.includes('USER NAME') || c.includes('Name'));
+        idCol    = cols.findIndex(c => c === 'ID' || c === 'Id');
+        groupCol = cols.findIndex(c => c.includes('GROUP') || c.includes('Group'));
+        continue;
+      }
+      if (callsCol < 0) continue;
+      const calls = parseInt(cols[callsCol]);
+      if (!cols[nameCol] || isNaN(calls)) continue;
+      agents.push({ name: cols[nameCol], id: cols[idCol]||cols[nameCol], group: cols[groupCol]||'Agents', dials: calls });
+    }
+  }
+
+  if (!agents.length) {
+    btn.textContent = 'Import failed — wrong file?';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = 'var(--red)';
+    input.value = '';
+    return;
+  }
+
+  // Push to Railway cache
+  try {
+    await fetch('/api/vici-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agents, date })
+    });
+  } catch(e) {}
+
+  viciData = agents;
+  viciLastTs = new Date();
+  setDot(document.getElementById('viciDot'), 'ok');
+  btn.textContent = `Dials imported (${agents.length})`;
+  btn.style.borderColor = 'var(--green)';
+  btn.style.color = 'var(--green)';
+  input.value = '';
+  mergeAndRender();
+}
+
+async function syncDialsFromVici() {
   const btn = document.getElementById('btnViciConnect');
   btn.textContent = 'Syncing...';
-  const date = document.getElementById('reportDate').value || today();
-
+  btn.style.borderColor = '';
+  btn.style.color = '';
+  const date = today();
   try {
     const body = new URLSearchParams({
       DB:'0', query_date:date, query_time:'00:00:00',
@@ -608,17 +681,16 @@ async function syncDials() {
       report_display_type:'TEXT', shift:'--', SUBMIT:'SUBMIT'
     });
     const r = await fetch('https://emortgage.talkitpro.com/vicidial/AST_agent_performance_detail.php', {
-      method: 'POST', body, credentials: 'include', mode: 'cors'
+      method:'POST', body, credentials:'include'
     });
     const html = await r.text();
     const pre = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
-    if (!pre) throw new Error('Not logged into VICIdial or CORS blocked');
+    if (!pre) throw new Error('No data — make sure you are logged into VICIdial in this browser');
     const agents = await parseViciReport(pre[1]);
-    if (!agents.length) throw new Error('No agents found');
+    if (!agents.length) throw new Error('No agents parsed');
     await fetch('/api/vici-push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agents, date })
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({agents, date})
     });
     viciData = agents;
     viciLastTs = new Date();
@@ -628,12 +700,10 @@ async function syncDials() {
     btn.style.color = 'var(--green)';
     mergeAndRender();
   } catch(e) {
-    // CORS will always block cross-origin fetch from leaderboard
-    // Show instructions to open VICIdial first
-    btn.textContent = 'Open VICIdial tab first';
-    btn.style.borderColor = 'var(--amber)';
-    btn.style.color = 'var(--amber)';
-    console.error(e.message);
+    btn.textContent = 'Sync failed';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = 'var(--red)';
+    console.error('Sync error:', e.message);
   }
 }
 
@@ -753,7 +823,7 @@ function mergeAndRender() {
     const match = Object.values(agentMap).find(ag => ag.name.toLowerCase() === a.name.toLowerCase());
     if (match) {
       match.dials = a.dials;
-      match.group = a.group || match.group;
+      // Do NOT overwrite group — keep SF UserRole name
     }
   });
 
