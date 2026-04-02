@@ -252,4 +252,44 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-app.listen(PORT, () => console.log(`Leaderboard running on port ${PORT}`));
+// ── Auto-pull dials from realtime endpoint on startup and every 10 minutes ────
+async function autoSyncVici() {
+  const date = new Date().toISOString().split('T')[0];
+  try {
+    const r = await fetch(`${VICI_BASE}/vicidial/AST_timeonVDADall.php`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    const text = await r.text();
+    // Parse: | SIP/XXX | Agent Name + | sessionid | STATUS | MM:SS | CAMPAIGN | CALLS |
+    const agentMap = {};
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('|')) continue;
+      const cols = line.split('|').map(c => c.trim());
+      if (cols.length < 8) continue;
+      const name = cols[2]?.replace(/\s*\+\s*$/, '').trim();
+      const calls = parseInt(cols[7]);
+      if (!name || name === 'USER SHOW ID INFO' || isNaN(calls)) continue;
+      if (!agentMap[name] || calls > agentMap[name].dials)
+        agentMap[name] = { name, id: name, group: 'Agents', dials: calls };
+    }
+    const agents = Object.values(agentMap);
+    if (agents.length > 0) {
+      // Only update if we don't have a pushed cache for today (push takes priority)
+      if (!dialerCache.agents.length || dialerCache.date !== date) {
+        dialerCache = { agents, date, updatedAt: new Date().toISOString() };
+        console.log(`[VICIdial] Auto-sync: ${agents.length} agents from realtime`);
+        try { fs.writeFileSync(CACHE_FILE, JSON.stringify(dialerCache)); } catch(e) {}
+      }
+    }
+  } catch(e) {
+    console.log(`[VICIdial] Auto-sync error: ${e.message}`);
+  }
+}
+
+app.listen(PORT, () => {
+  console.log(`Leaderboard running on port ${PORT}`);
+  // Pull dials immediately on startup
+  autoSyncVici();
+  // Then every 10 minutes
+  setInterval(autoSyncVici, 10 * 60 * 1000);
+});
