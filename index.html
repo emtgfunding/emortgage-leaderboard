@@ -774,8 +774,10 @@ async function fetchVici() {
     viciData = agents;
     viciLastTs = new Date();
     setDot(document.getElementById('viciDot'), 'ok');
+    viciSecsLeft = VICI_INTERVAL; // reset to 10 min when data found
   } else {
     setDot(document.getElementById('viciDot'), 'error');
+    viciSecsLeft = 30; // retry in 30 seconds when no data
   }
 
   viciFetching = false;
