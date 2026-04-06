@@ -794,10 +794,21 @@ function mergeAndRender() {
   sfData.pulls.forEach(r    => { const k=(r.ownerName||r['Owner.Name']||'').toLowerCase(); if(k) pullMap[k] = (pullMap[k]||0) + (r.cnt||0); });
   sfData.apps.forEach(r     => { const k=(r.ownerName||r['Owner.Name']||r.Name||'').toLowerCase(); if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0); });
   viciData.forEach(a => {
-    const k = a.name.toLowerCase();
-    // Keep highest dial count in case of duplicates
+    const k = a.name.toLowerCase().trim();
     if (!dialMap[k] || a.dials > dialMap[k]) dialMap[k] = a.dials;
   });
+
+  // Fuzzy dial lookup — exact match first, then prefix match for truncated names
+  function findDials(sfName) {
+    const k = sfName.toLowerCase().trim();
+    if (dialMap[k] !== undefined) return dialMap[k];
+    // VICIdial truncates names — check if any vici name is a prefix of SF name or vice versa
+    for (const [vKey, dials] of Object.entries(dialMap)) {
+      const minLen = Math.min(k.length, vKey.length);
+      if (minLen >= 8 && k.substring(0, minLen) === vKey.substring(0, minLen)) return dials;
+    }
+    return 0;
+  }
 
   // Build agent list from SF users — always populated regardless of VICIdial
   const sfAgentNames = new Set([
@@ -806,7 +817,7 @@ function mergeAndRender() {
     ...Object.keys(appMap),
   ]);
 
-  // Start with SF users — match using lowercase keys for case-insensitive lookup
+  // Start with SF users — use fuzzy dial lookup
   const agentMap = {};
   sfData.users.forEach(u => {
     const k = u.Name.toLowerCase();
@@ -814,7 +825,7 @@ function mergeAndRender() {
       name:      u.Name,
       id:        u.Id,
       group:     u.UserRole?.Name || 'Unassigned',
-      dials:     dialMap[k] || 0,
+      dials:     findDials(u.Name),
       transfers: xfrMap[k]  || 0,
       pulls:     pullMap[k] || 0,
       apps:      appMap[k]  || 0,
@@ -824,12 +835,17 @@ function mergeAndRender() {
   // Do NOT add agents from SF activity who aren't in the SF user list
   // This prevents non-SF users (e.g. Dialer_Agent__c free-text entries) from appearing
 
-  // Merge VICIdial dials — match case-insensitively
+  // Merge VICIdial dials — fuzzy match for truncated names
   viciData.forEach(a => {
-    const match = Object.values(agentMap).find(ag => ag.name.toLowerCase() === a.name.toLowerCase());
-    if (match) {
+    const vName = a.name.toLowerCase().trim();
+    const match = Object.values(agentMap).find(ag => {
+      const sName = ag.name.toLowerCase().trim();
+      if (sName === vName) return true;
+      const minLen = Math.min(sName.length, vName.length);
+      return minLen >= 8 && sName.substring(0, minLen) === vName.substring(0, minLen);
+    });
+    if (match && a.dials > match.dials) {
       match.dials = a.dials;
-      // Do NOT overwrite group — keep SF UserRole name
     }
   });
 
