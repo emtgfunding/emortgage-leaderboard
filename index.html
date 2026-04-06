@@ -802,10 +802,10 @@ function mergeAndRender() {
   function findDials(sfName) {
     const k = sfName.toLowerCase().trim();
     if (dialMap[k] !== undefined) return dialMap[k];
-    // VICIdial truncates names — check if any vici name is a prefix of SF name or vice versa
+    // VICIdial truncates names at ~16 chars — match on first 12 chars
+    const prefix = k.substring(0, 12);
     for (const [vKey, dials] of Object.entries(dialMap)) {
-      const minLen = Math.min(k.length, vKey.length);
-      if (minLen >= 8 && k.substring(0, minLen) === vKey.substring(0, minLen)) return dials;
+      if (vKey.substring(0, 12) === prefix) return dials;
     }
     return 0;
   }
@@ -838,11 +838,10 @@ function mergeAndRender() {
   // Merge VICIdial dials — fuzzy match for truncated names
   viciData.forEach(a => {
     const vName = a.name.toLowerCase().trim();
+    const vPrefix = vName.substring(0, 12);
     const match = Object.values(agentMap).find(ag => {
       const sName = ag.name.toLowerCase().trim();
-      if (sName === vName) return true;
-      const minLen = Math.min(sName.length, vName.length);
-      return minLen >= 8 && sName.substring(0, minLen) === vName.substring(0, minLen);
+      return sName === vName || sName.substring(0, 12) === vPrefix;
     });
     if (match && a.dials > match.dials) {
       match.dials = a.dials;
