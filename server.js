@@ -116,17 +116,52 @@ app.options('/api/vici-push', (req, res) => {
   res.sendStatus(200);
 });
 
-const fs   = require('fs');
-const CACHE_FILE = '/tmp/vici-cache.json';
+const fs = require('fs');
 
-// ── In-memory dialer cache with file persistence ──────────────────────────────
-let dialerCache = { agents: [], date: null, updatedAt: null };
-try {
-  if (fs.existsSync(CACHE_FILE)) {
-    dialerCache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-    console.log(`[VICIdial] Loaded cache: ${dialerCache.agents.length} agents for ${dialerCache.date}`);
+// ── Redis cache for persistence across restarts ───────────────────────────────
+let redisClient = null;
+const CACHE_KEY = 'vici_cache';
+
+async function initRedis() {
+  if (!process.env.REDIS_URL) return;
+  try {
+    const { createClient } = require('redis');
+    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisClient.on('error', e => console.log('[Redis] Error:', e.message));
+    await redisClient.connect();
+    console.log('[Redis] Connected');
+    // Load cached data on startup
+    const cached = await redisClient.get(CACHE_KEY);
+    if (cached) {
+      dialerCache = JSON.parse(cached);
+      console.log(`[Redis] Loaded cache: ${dialerCache.agents.length} agents for ${dialerCache.date}`);
+    }
+  } catch(e) {
+    console.log('[Redis] Init failed:', e.message);
+    redisClient = null;
   }
-} catch(e) { console.log('[VICIdial] No cache file found'); }
+}
+
+async function saveCache() {
+  try {
+    // Save to Redis if available
+    if (redisClient) {
+      await redisClient.set(CACHE_KEY, JSON.stringify(dialerCache), { EX: 86400 }); // 24hr TTL
+    }
+    // Also save to file as backup
+    fs.writeFileSync('/tmp/vici-cache.json', JSON.stringify(dialerCache));
+  } catch(e) {}
+}
+
+// ── In-memory dialer cache ────────────────────────────────────────────────────
+let dialerCache = { agents: [], date: null, updatedAt: null };
+// Try loading from file backup on startup
+try {
+  if (fs.existsSync('/tmp/vici-cache.json')) {
+    dialerCache = JSON.parse(fs.readFileSync('/tmp/vici-cache.json', 'utf8'));
+    console.log(`[Cache] Loaded from file: ${dialerCache.agents.length} agents for ${dialerCache.date}`);
+  }
+} catch(e) {}
 
 // ── /api/vici-push — bookmarklet POSTs agent data here ───────────────────────
 app.post('/api/vici-push', (req, res) => {
@@ -138,7 +173,7 @@ app.post('/api/vici-push', (req, res) => {
     return res.status(400).json({ error: 'No agents in payload' });
   }
   dialerCache = { agents, date: date || new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString() };
-  try { fs.writeFileSync(CACHE_FILE, JSON.stringify(dialerCache)); } catch(e) {}
+  await saveCache();
   console.log(`[VICIdial] Push: ${agents.length} agents for ${dialerCache.date}`);
   res.json({ ok: true, agents: agents.length, date: dialerCache.date });
 });
@@ -260,8 +295,9 @@ async function autoSyncVici() {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     });
     const text = await r.text();
-    // Parse: | SIP/XXX | Agent Name + | sessionid | STATUS | MM:SS | CAMPAIGN | CALLS |
-    const agentMap = {};
+
+    // Parse realtime agents (currently logged in only)
+    const realtimeMap = {};
     for (const line of text.split('\n')) {
       if (!line.startsWith('|')) continue;
       const cols = line.split('|').map(c => c.trim());
@@ -269,27 +305,41 @@ async function autoSyncVici() {
       const name = cols[2]?.replace(/\s*\+\s*$/, '').trim();
       const calls = parseInt(cols[7]);
       if (!name || name === 'USER SHOW ID INFO' || isNaN(calls)) continue;
-      if (!agentMap[name] || calls > agentMap[name].dials)
-        agentMap[name] = { name, id: name, group: 'Agents', dials: calls };
+      if (!realtimeMap[name] || calls > realtimeMap[name]) realtimeMap[name] = calls;
     }
-    const agents = Object.values(agentMap);
-    if (agents.length > 0) {
-      // Only update if we don't have a pushed cache for today (push takes priority)
-      if (!dialerCache.agents.length || dialerCache.date !== date) {
-        dialerCache = { agents, date, updatedAt: new Date().toISOString() };
-        console.log(`[VICIdial] Auto-sync: ${agents.length} agents from realtime`);
-        try { fs.writeFileSync(CACHE_FILE, JSON.stringify(dialerCache)); } catch(e) {}
+
+    if (Object.keys(realtimeMap).length === 0) return;
+
+    // Merge: keep max dials between cache and realtime
+    // This preserves dials for agents who logged out during the day
+    let agents;
+    if (dialerCache.agents.length > 0 && dialerCache.date === date) {
+      const cacheMap = {};
+      dialerCache.agents.forEach(a => { cacheMap[a.name] = a; });
+      // Update cached agents with higher realtime values
+      for (const [name, dials] of Object.entries(realtimeMap)) {
+        if (cacheMap[name]) {
+          if (dials > cacheMap[name].dials) cacheMap[name] = { ...cacheMap[name], dials };
+        } else {
+          cacheMap[name] = { name, id: name, group: 'Agents', dials };
+        }
       }
+      agents = Object.values(cacheMap);
+    } else {
+      agents = Object.entries(realtimeMap).map(([name, dials]) => ({ name, id: name, group: 'Agents', dials }));
     }
+
+    dialerCache = { agents, date, updatedAt: new Date().toISOString() };
+    try { fs.writeFileSync(CACHE_FILE, JSON.stringify(dialerCache)); } catch(e) {}
+    console.log(`[VICIdial] Auto-sync: ${agents.length} total (${Object.keys(realtimeMap).length} active now)`);
   } catch(e) {
     console.log(`[VICIdial] Auto-sync error: ${e.message}`);
   }
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Leaderboard running on port ${PORT}`);
-  // Pull dials immediately on startup
+  await initRedis();
   autoSyncVici();
-  // Then every 10 minutes
   setInterval(autoSyncVici, 10 * 60 * 1000);
 });
