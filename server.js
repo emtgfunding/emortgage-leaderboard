@@ -164,7 +164,7 @@ try {
 } catch(e) {}
 
 // ── /api/vici-push — bookmarklet POSTs agent data here ───────────────────────
-app.post('/api/vici-push', (req, res) => {
+app.post('/api/vici-push', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
