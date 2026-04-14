@@ -354,8 +354,11 @@
   }
   .team-agent:last-child { border-bottom: none; }
   .team-agent-name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .team-agent-score { font-weight: 700; font-size: 12px; }
-  .team-agent-dials { color: var(--muted); font-size: 11px; }
+  .team-agent-score { font-weight: 700; font-size: 12px; min-width: 28px; text-align: right; }
+  .team-agent-dials { color: var(--muted); font-size: 11px; min-width: 30px; text-align: right; }
+  .team-agent-stats { display: flex; gap: 4px; font-size: 10px; color: var(--muted); }
+  .team-agent-stats span { background: var(--surface2); border-radius: 3px; padding: 1px 4px; white-space: nowrap; }
+  .team-agent-stats .has-val { color: var(--text); font-weight: 600; }
   body.tv-mode .header-sub,
   body.tv-mode .refresh-strip,
   body.tv-mode .summary-grid,
@@ -1108,8 +1111,16 @@ function renderTeam() {
       const isClose = !isHit && a.pts >= goal * 0.75;
       const scoreColor = isHit ? 'var(--green)' : isClose ? 'var(--amber)' : 'var(--red)';
       const rowBg = isHit ? 'var(--green-bg,#f0fff4)' : 'transparent';
+      const xfrCls  = a.transfers > 0 ? 'has-val' : '';
+      const appCls  = a.apps > 0 ? 'has-val' : '';
+      const pullCls = a.pulls > 0 ? 'has-val' : '';
       return `<div class="team-agent" style="background:${rowBg}">
         <span class="team-agent-name" title="${a.name}">${a.name}</span>
+        <span class="team-agent-stats">
+          <span class="${xfrCls}" title="Transfers">🔀${a.transfers}</span>
+          <span class="${appCls}" title="Apps out">📋${a.apps}</span>
+          <span class="${pullCls}" title="Soft pulls">📊${a.pulls}</span>
+        </span>
         <span class="team-agent-dials">${a.dials}d</span>
         <span class="team-agent-score" style="color:${scoreColor}">${a.pts}</span>
       </div>`;
