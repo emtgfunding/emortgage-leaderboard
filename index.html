@@ -1117,9 +1117,9 @@ function renderTeam() {
       return `<div class="team-agent" style="background:${rowBg}">
         <span class="team-agent-name" title="${a.name}">${a.name}</span>
         <span class="team-agent-stats">
-          <span class="${xfrCls}" title="Transfers">🔀${a.transfers}</span>
-          <span class="${appCls}" title="Apps out">📋${a.apps}</span>
-          <span class="${pullCls}" title="Soft pulls">📊${a.pulls}</span>
+          <span class="${xfrCls}" title="Transfers">X:${a.transfers}</span>
+          <span class="${appCls}" title="Apps out">A:${a.apps}</span>
+          <span class="${pullCls}" title="Soft pulls">P:${a.pulls}</span>
         </span>
         <span class="team-agent-dials">${a.dials}d</span>
         <span class="team-agent-score" style="color:${scoreColor}">${a.pts}</span>
