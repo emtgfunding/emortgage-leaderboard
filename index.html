@@ -311,7 +311,57 @@
     display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
   }
 
-  /* ── TV mode — activated by button ── */
+  /* ── View switcher ── */
+  .view-btn { opacity: 0.6; }
+  .view-btn.active { opacity: 1; border-color: var(--blue); color: var(--blue); }
+
+  /* ── Dense view ── */
+  .dense-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    font-size: 12px;
+  }
+  .dense-row {
+    display: flex; align-items: center;
+    padding: 4px 8px; gap: 6px;
+    background: var(--surface); border-radius: 4px;
+    border-left: 3px solid transparent;
+  }
+  .dense-row.hit  { border-left-color: var(--green); }
+  .dense-row.close { border-left-color: var(--amber); }
+  .dense-row.miss { border-left-color: var(--red); }
+  .dense-rank { font-size: 10px; color: var(--muted); width: 18px; flex-shrink: 0; }
+  .dense-name { flex: 1; font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dense-score { font-weight: 700; font-size: 13px; width: 36px; text-align: right; flex-shrink: 0; }
+  .dense-dials { color: var(--muted); font-size: 11px; width: 28px; text-align: right; flex-shrink: 0; }
+
+  /* ── Team view ── */
+  .team-section { margin-bottom: 16px; }
+  .team-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px; background: var(--surface2);
+    border-radius: var(--radius) var(--radius) 0 0;
+    font-weight: 700; font-size: 13px; border-bottom: 2px solid var(--border);
+  }
+  .team-hit-count { margin-left: auto; font-size: 12px; }
+  .team-hit-count .hit { color: var(--green); }
+  .team-hit-count .miss { color: var(--red); }
+  .team-agents {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 2px; background: var(--border); border: 1px solid var(--border);
+    border-top: none; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden;
+  }
+  .team-agent {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; background: var(--surface);
+    font-size: 12px;
+  }
+  .team-agent.hit  { background: var(--green-bg); }
+  .team-agent.miss { background: var(--surface); }
+  .team-agent-name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .team-agent-score { font-weight: 700; font-size: 12px; }
+  .team-agent-dials { color: var(--muted); font-size: 11px; }
   body.tv-mode .header-sub,
   body.tv-mode .refresh-strip,
   body.tv-mode .summary-grid,
@@ -460,6 +510,7 @@
     <div class="s-card">
       <div class="s-label">Apps out</div>
       <div class="s-val" id="sApps">—</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">SF: <span id="sAppsSF" style="font-weight:600;color:var(--text)">—</span> &nbsp;|&nbsp; LB: <span id="sAppsLB" style="font-weight:600;color:var(--text)">—</span></div>
     </div>
     <div class="s-card">
       <div class="s-label">Avg score</div>
@@ -508,7 +559,18 @@
       <option value="miss">Below 75%</option>
     </select>
     <span class="agent-count" id="agentCount"></span>
+    <div style="display:flex;gap:6px;margin-left:auto">
+      <button class="btn view-btn active" id="btnViewList" onclick="setView('list')">📋 List</button>
+      <button class="btn view-btn" id="btnViewDense" onclick="setView('dense')">⚡ Dense</button>
+      <button class="btn view-btn" id="btnViewTeam" onclick="setView('team')">👥 By Team</button>
+    </div>
   </div>
+
+  <!-- Dense view (multi-column grid) -->
+  <div id="denseView" style="display:none"></div>
+
+  <!-- Team view -->
+  <div id="teamView" style="display:none"></div>
 
   <!-- Table -->
   <div class="table-wrap">
@@ -540,6 +602,19 @@
       <tbody id="tbody">
         <tr><td colspan="9"><div class="empty-state"><strong>Loading leaderboard...</strong>Fetching live data from Salesforce and VICIdial.</div></td></tr>
       </tbody>
+      <tfoot id="tfoot" style="font-weight:700;font-size:12px;background:var(--surface2);border-top:2px solid var(--border)">
+        <tr id="totalsRow" style="display:none">
+          <td></td>
+          <td style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px">Totals</td>
+          <td></td>
+          <td class="r"></td>
+          <td class="r" id="ftDials">—</td>
+          <td class="r" id="ftXfrs">—</td>
+          <td class="r" id="ftApps">—</td>
+          <td class="r" id="ftPulls">—</td>
+          <td></td>
+        </tr>
+      </tfoot>
     </table>
   </div>
 </div>
@@ -852,6 +927,11 @@ function mergeAndRender() {
   sfData.transfers.forEach(r => { const k=(r.ownerName||r['Owner.Name']||'').toLowerCase(); if(k) xfrMap[k]  = (xfrMap[k]||0)  + (r.cnt||0); });
   sfData.pulls.forEach(r    => { const k=(r.ownerName||r['Owner.Name']||'').toLowerCase(); if(k) pullMap[k] = (pullMap[k]||0) + (r.cnt||0); });
   sfData.apps.forEach(r     => { const k=(r.ownerName||r['Owner.Name']||r.Name||'').toLowerCase(); if(k) appMap[k] = (appMap[k]||0) + (r.cnt||0); });
+
+  // Show raw SF apps total (sum of all records from SF SOQL)
+  const sfAppsTotal = sfData.apps.reduce((s,r) => s+(r.cnt||0), 0);
+  const sAppsSFEl = document.getElementById('sAppsSF');
+  if (sAppsSFEl) sAppsSFEl.textContent = sfAppsTotal.toLocaleString();
   viciData.forEach(a => {
     const k = a.name.toLowerCase().trim();
     if (!dialMap[k] || a.dials > dialMap[k]) dialMap[k] = a.dials;
@@ -949,22 +1029,115 @@ function updateSummary() {
   const total   = filtered.length;
   const hit     = filteredScored.filter(a => a.pts >= PTS.goal).length;
   const avgPts  = filteredScored.length ? Math.round(filteredScored.reduce((s,a) => s+a.pts,0)/filteredScored.length) : 0;
+
+  const totalDials = filtered.reduce((s,a)=>s+a.dials,0);
+  const totalXfrs  = filtered.reduce((s,a)=>s+a.transfers,0);
+  const totalPulls = filtered.reduce((s,a)=>s+a.pulls,0);
+  const totalAppsLB = filtered.reduce((s,a)=>s+a.apps,0); // from leaderboard (SF SOQL)
+
   document.getElementById('sAgents').textContent    = `${active}/${total}`;
   document.getElementById('sAgentsSub').textContent = 'active / total LOs';
   document.getElementById('sHit').textContent       = `${hit}/${total}`;
   document.getElementById('sHitPct').textContent    = total ? Math.round(hit/total*100)+'% of team' : '';
-  document.getElementById('sDials').textContent     = filtered.reduce((s,a)=>s+a.dials,0).toLocaleString();
-  document.getElementById('sXfrs').textContent      = filtered.reduce((s,a)=>s+a.transfers,0).toLocaleString();
-  document.getElementById('sPulls').textContent     = filtered.reduce((s,a)=>s+a.pulls,0).toLocaleString();
-  document.getElementById('sApps').textContent      = filtered.reduce((s,a)=>s+a.apps,0).toLocaleString();
+  document.getElementById('sDials').textContent     = totalDials.toLocaleString();
+  document.getElementById('sXfrs').textContent      = totalXfrs.toLocaleString();
+  document.getElementById('sPulls').textContent     = totalPulls.toLocaleString();
+  document.getElementById('sApps').textContent      = totalAppsLB.toLocaleString();
+  document.getElementById('sAppsLB').textContent    = totalAppsLB.toLocaleString();
+  // sAppsSF is populated when SF data arrives (see fetchSF)
   document.getElementById('sAvg').textContent       = avgPts;
+
+  // Totals footer row
+  const tr = document.getElementById('totalsRow');
+  if (tr) {
+    tr.style.display = '';
+    document.getElementById('ftDials').textContent = totalDials.toLocaleString();
+    document.getElementById('ftXfrs').textContent  = totalXfrs.toLocaleString();
+    document.getElementById('ftApps').textContent  = totalAppsLB.toLocaleString();
+    document.getElementById('ftPulls').textContent = totalPulls.toLocaleString();
+  }
 
   const date = document.getElementById('reportDate').value || today();
   const ds = new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   document.getElementById('headerSub').textContent = `eMortgage Funding — ${ds}`;
 }
 
+let currentView = 'list';
+
+function setView(v) {
+  currentView = v;
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btnView' + v.charAt(0).toUpperCase() + v.slice(1))?.classList.add('active');
+  document.querySelector('.table-wrap').style.display = v === 'list' ? '' : 'none';
+  document.getElementById('denseView').style.display = v === 'dense' ? '' : 'none';
+  document.getElementById('teamView').style.display  = v === 'team'  ? '' : 'none';
+  if (v === 'dense') renderDense();
+  if (v === 'team')  renderTeam();
+}
+
+function renderDense() {
+  const data = allAgents.map(a => ({...a, pts: calcPts(a)}));
+  data.sort((a,b) => a.pts - b.pts); // highest first (sortDir=-1 convention)
+  const goal = PTS.goal;
+  const html = data.map((a, i) => {
+    const cls = a.pts >= goal ? 'hit' : a.pts >= goal * 0.75 ? 'close' : 'miss';
+    const scoreColor = a.pts >= goal ? 'var(--green)' : a.pts >= goal*0.75 ? 'var(--amber)' : 'var(--red)';
+    return `<div class="dense-row ${cls}">
+      <span class="dense-rank">${i+1}</span>
+      <span class="dense-name" title="${a.name}">${a.name}</span>
+      <span class="dense-dials">${a.dials}d</span>
+      <span class="dense-score" style="color:${scoreColor}">${a.pts}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('denseView').innerHTML = `<div class="dense-grid">${html}</div>`;
+}
+
+function renderTeam() {
+  const scored = allAgents.map(a => ({...a, pts: calcPts(a)}));
+  const goal = PTS.goal;
+  // Group by team
+  const teams = {};
+  scored.forEach(a => {
+    if (!teams[a.group]) teams[a.group] = [];
+    teams[a.group].push(a);
+  });
+  // Sort teams by # hit goal desc
+  const sortedTeams = Object.entries(teams).sort((a,b) => {
+    const hitA = a[1].filter(x=>x.pts>=goal).length;
+    const hitB = b[1].filter(x=>x.pts>=goal).length;
+    return hitB - hitA;
+  });
+  const html = sortedTeams.map(([team, agents]) => {
+    agents.sort((a,b) => b.pts - a.pts);
+    const hit  = agents.filter(a=>a.pts>=goal).length;
+    const miss = agents.length - hit;
+    const agentHtml = agents.map(a => {
+      const cls = a.pts >= goal ? 'hit' : 'miss';
+      const scoreColor = a.pts >= goal ? 'var(--green)' : a.pts >= goal*0.75 ? 'var(--amber)' : 'var(--red)';
+      return `<div class="team-agent ${cls}">
+        <span class="team-agent-name" title="${a.name}">${a.name}</span>
+        <span class="team-agent-dials">${a.dials}d</span>
+        <span class="team-agent-score" style="color:${scoreColor}">${a.pts}</span>
+      </div>`;
+    }).join('');
+    return `<div class="team-section">
+      <div class="team-header">
+        <span>${team}</span>
+        <span class="team-hit-count">
+          <span class="hit">✅ ${hit}</span>
+          <span style="color:var(--muted)"> / </span>
+          <span class="miss">❌ ${miss}</span>
+        </span>
+      </div>
+      <div class="team-agents">${agentHtml}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('teamView').innerHTML = html;
+}
+
 function renderTable() {
+  if (currentView === 'dense') { renderDense(); return; }
+  if (currentView === 'team')  { renderTeam();  return; }
   const s      = document.getElementById('sf2').value;
   const search = (document.getElementById('agentSearch')?.value || '').toLowerCase().trim();
   let data = allAgents.map(a => ({ ...a, pts: calcPts(a) })).filter(a => {
