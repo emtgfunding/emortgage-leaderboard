@@ -287,6 +287,14 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ── Force immediate VICIdial sync ────────────────────────────────────────────
+app.get('/api/vici-refresh', async (req, res) => {
+  const before = dialerCache.agents.length;
+  await autoSyncVici();
+  const after = dialerCache.agents.length;
+  res.json({ ok: true, agents: after, was: before, updatedAt: dialerCache.updatedAt });
+});
+
 // ── Auto-pull dials from realtime endpoint on startup and every 10 minutes ────
 async function autoSyncVici() {
   const date = new Date().toISOString().split('T')[0];

@@ -336,29 +336,23 @@
   .dense-score { font-weight: 700; font-size: 13px; width: 36px; text-align: right; flex-shrink: 0; }
   .dense-dials { color: var(--muted); font-size: 11px; width: 28px; text-align: right; flex-shrink: 0; }
 
-  /* ── Team view ── */
-  .team-section { margin-bottom: 16px; }
-  .team-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px 12px; background: var(--surface2);
-    border-radius: var(--radius) var(--radius) 0 0;
-    font-weight: 700; font-size: 13px; border-bottom: 2px solid var(--border);
+  /* ── Team 4-column layout ── */
+  .team-4col {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    align-items: start;
   }
-  .team-hit-count { margin-left: auto; font-size: 12px; }
-  .team-hit-count .hit { color: var(--green); }
-  .team-hit-count .miss { color: var(--red); }
-  .team-agents {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 2px; background: var(--border); border: 1px solid var(--border);
-    border-top: none; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden;
-  }
+  .team-col { display: flex; flex-direction: column; gap: 8px; }
+  .team-col-card { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .team-col-agents { display: flex; flex-direction: column; }
   .team-agent {
     display: flex; align-items: center; gap: 6px;
-    padding: 5px 10px; background: var(--surface);
+    padding: 4px 10px;
     font-size: 12px;
+    border-bottom: 1px solid var(--border);
   }
-  .team-agent.hit  { background: var(--green-bg); }
-  .team-agent.miss { background: var(--surface); }
+  .team-agent:last-child { border-bottom: none; }
   .team-agent-name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .team-agent-score { font-weight: 700; font-size: 12px; }
   .team-agent-dials { color: var(--muted); font-size: 11px; }
@@ -1077,7 +1071,7 @@ function setView(v) {
 
 function renderDense() {
   const data = allAgents.map(a => ({...a, pts: calcPts(a)}));
-  data.sort((a,b) => a.pts - b.pts); // highest first (sortDir=-1 convention)
+  data.sort((a,b) => b.pts - a.pts); // highest first
   const goal = PTS.goal;
   const html = data.map((a, i) => {
     const cls = a.pts >= goal ? 'hit' : a.pts >= goal * 0.75 ? 'close' : 'miss';
@@ -1095,44 +1089,47 @@ function renderDense() {
 function renderTeam() {
   const scored = allAgents.map(a => ({...a, pts: calcPts(a)}));
   const goal = PTS.goal;
-  // Group by team
   const teams = {};
   scored.forEach(a => {
     if (!teams[a.group]) teams[a.group] = [];
     teams[a.group].push(a);
   });
-  // Sort teams by # hit goal desc
   const sortedTeams = Object.entries(teams).sort((a,b) => {
     const hitA = a[1].filter(x=>x.pts>=goal).length;
     const hitB = b[1].filter(x=>x.pts>=goal).length;
-    return hitB - hitA;
+    return hitB - hitA || a[0].localeCompare(b[0]);
   });
-  const html = sortedTeams.map(([team, agents]) => {
+  const teamCards = sortedTeams.map(([team, agents]) => {
     agents.sort((a,b) => b.pts - a.pts);
     const hit  = agents.filter(a=>a.pts>=goal).length;
     const miss = agents.length - hit;
-    const agentHtml = agents.map(a => {
-      const cls = a.pts >= goal ? 'hit' : 'miss';
-      const scoreColor = a.pts >= goal ? 'var(--green)' : a.pts >= goal*0.75 ? 'var(--amber)' : 'var(--red)';
-      return `<div class="team-agent ${cls}">
+    const agentRows = agents.map(a => {
+      const isHit = a.pts >= goal;
+      const isClose = !isHit && a.pts >= goal * 0.75;
+      const scoreColor = isHit ? 'var(--green)' : isClose ? 'var(--amber)' : 'var(--red)';
+      const rowBg = isHit ? 'var(--green-bg,#f0fff4)' : 'transparent';
+      return `<div class="team-agent" style="background:${rowBg}">
         <span class="team-agent-name" title="${a.name}">${a.name}</span>
         <span class="team-agent-dials">${a.dials}d</span>
         <span class="team-agent-score" style="color:${scoreColor}">${a.pts}</span>
       </div>`;
     }).join('');
-    return `<div class="team-section">
+    return `<div class="team-col-card">
       <div class="team-header">
-        <span>${team}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${team}</span>
         <span class="team-hit-count">
-          <span class="hit">✅ ${hit}</span>
+          <span style="color:var(--green)">✅${hit}</span>
           <span style="color:var(--muted)"> / </span>
-          <span class="miss">❌ ${miss}</span>
+          <span style="color:var(--red)">❌${miss}</span>
         </span>
       </div>
-      <div class="team-agents">${agentHtml}</div>
+      <div class="team-col-agents">${agentRows}</div>
     </div>`;
-  }).join('');
-  document.getElementById('teamView').innerHTML = html;
+  });
+  const cols = [[], [], [], []];
+  teamCards.forEach((card, i) => cols[i % 4].push(card));
+  const colHtml = cols.map(c => `<div class="team-col">${c.join('')}</div>`).join('');
+  document.getElementById('teamView').innerHTML = `<div class="team-4col">${colHtml}</div>`;
 }
 
 function renderTable() {
@@ -1330,8 +1327,12 @@ function togglePause() {
 function forceRefresh() {
   sfSecsLeft = 0;
   viciSecsLeft = 0;
-  // Also trigger sync from VICIdial tab if open
-  syncDialsFromVici();
+  // Immediately trigger server-side VICIdial pull (no waiting for 10-min cycle)
+  fetch('/api/vici-refresh')
+    .then(r => r.json())
+    .then(d => { if (d.ok) { fetchVici(); } })
+    .catch(() => {});
+  fetchSF();
 }
 
 function togglePtsEditor() {
