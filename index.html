@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Daily Ladder — eMortgage Funding</title>
+<title>Daily Effort — eMortgage Funding</title>
 <style>
   :root {
     --bg:        #0f1117;
@@ -311,7 +311,36 @@
     display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
   }
 
-  /* ── TV mode (≥1800px) ── */
+  /* ── TV mode — activated by button ── */
+  body.tv-mode .header-sub,
+  body.tv-mode .refresh-strip,
+  body.tv-mode .summary-grid,
+  body.tv-mode .filters-row,
+  body.tv-mode .saved-searches,
+  body.tv-mode #agentSearch,
+  body.tv-mode .btn-edit-pts,
+  body.tv-mode .pts-editor,
+  body.tv-mode .footer,
+  body.tv-mode #btnTV,
+  body.tv-mode #btnTheme,
+  body.tv-mode #btnPause,
+  body.tv-mode #btnViciConnect,
+  body.tv-mode .quick-views { display: none !important; }
+
+  body.tv-mode { font-size: 13px; }
+  body.tv-mode .header { padding: 8px 20px; }
+  body.tv-mode .header-title { font-size: 22px; }
+  body.tv-mode .main { padding: 8px 20px; }
+  body.tv-mode td, body.tv-mode th { padding: 5px 10px; }
+  body.tv-mode .agent-name { font-size: 13px; font-weight: 600; }
+  body.tv-mode .agent-group { font-size: 11px; }
+  body.tv-mode .score-val { font-size: 15px; }
+  body.tv-mode .av { width: 28px; height: 28px; font-size: 11px; }
+  body.tv-mode .bar-bg { width: 80px; height: 5px; }
+  body.tv-mode .status-badge { font-size: 10px; padding: 2px 6px; }
+  body.tv-mode #tbody tr { height: 36px; }
+
+  /* ── Large screen auto-TV ── */
   @media (min-width: 1800px) {
     body { font-size: 16px; }
     .header-title { font-size: 20px; }
@@ -338,7 +367,7 @@
   <div class="header-brand">
     <div class="header-logo">EM</div>
     <div>
-      <div class="header-title">Daily Ladder</div>
+      <div class="header-title">Daily Effort</div>
       <div class="header-sub" id="headerSub">eMortgage Funding — Daily Effort Tracker</div>
     </div>
   </div>
@@ -348,6 +377,7 @@
     <button class="btn" onclick="forceRefresh()">Refresh now</button>
     <button class="btn" id="btnViciConnect" onclick="syncDialsFromVici()">Sync dials</button>
     <input type="file" id="csvImport" accept=".csv,.txt" style="display:none" onchange="importDialsFile(this)">
+    <button class="btn" id="btnTV" onclick="toggleTV()">📺 TV mode</button>
     <button class="btn" id="btnTheme" onclick="toggleTheme()">Light mode</button>
   </div>
 </div>
@@ -669,10 +699,16 @@ async function importDialsFile(input) {
 
 async function syncDialsFromVici() {
   const btn = document.getElementById('btnViciConnect');
-  btn.textContent = 'Syncing...';
-  btn.style.borderColor = '';
-  btn.style.color = '';
   const date = today();
+
+  // Signal the VICIdial tab to sync via BroadcastChannel
+  try {
+    const bc = new BroadcastChannel('vici_sync');
+    bc.postMessage({ action: 'sync', date });
+    bc.close();
+  } catch(e) {}
+
+  // Also directly try fetching (works if CORS headers set)
   try {
     const body = new URLSearchParams({
       DB:'0', query_date:date, query_time:'00:00:00',
@@ -681,30 +717,53 @@ async function syncDialsFromVici() {
       report_display_type:'TEXT', shift:'--', SUBMIT:'SUBMIT'
     });
     const r = await fetch('https://emortgage.talkitpro.com/vicidial/AST_agent_performance_detail.php', {
-      method:'POST', body, credentials:'include'
+      method:'POST', body, credentials:'include', mode:'cors'
     });
     const html = await r.text();
     const pre = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
-    if (!pre) throw new Error('No data — make sure you are logged into VICIdial in this browser');
-    const agents = await parseViciReport(pre[1]);
-    if (!agents.length) throw new Error('No agents parsed');
-    await fetch('/api/vici-push', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({agents, date})
-    });
-    viciData = agents;
-    viciLastTs = new Date();
-    setDot(document.getElementById('viciDot'), 'ok');
-    btn.textContent = `Dials synced (${agents.length})`;
-    btn.style.borderColor = 'var(--green)';
-    btn.style.color = 'var(--green)';
-    mergeAndRender();
-  } catch(e) {
-    btn.textContent = 'Sync failed';
-    btn.style.borderColor = 'var(--red)';
-    btn.style.color = 'var(--red)';
-    console.error('Sync error:', e.message);
-  }
+    if (pre) {
+      const lines = pre[1].split('\n');
+      const header = lines.find(l => l.includes('USER NAME'));
+      const headerCols = header ? header.split('|').map(c=>c.trim()) : [];
+      const callsIdx = headerCols.indexOf('CALLS');
+      const agentMap = {};
+      for (const line of lines) {
+        if (!line.startsWith('|')) continue;
+        const cols = line.split('|').map(c=>c.trim());
+        if (cols.length < 6) continue;
+        const name = cols[1];
+        const calls = parseInt(callsIdx > 0 ? cols[callsIdx] : cols[5]);
+        if (!name || name === 'USER NAME' || isNaN(calls)) continue;
+        if (!agentMap[name] || calls > agentMap[name].dials)
+          agentMap[name] = {name, id:cols[2], group:cols[3], dials:calls};
+      }
+      const agents = Object.values(agentMap);
+      if (agents.length > 0) {
+        await fetch('/api/vici-push', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({agents, date})
+        });
+        viciData = agents;
+        viciLastTs = new Date();
+        setDot(document.getElementById('viciDot'), 'ok');
+        if (btn) { btn.textContent = `Dials synced (${agents.length})`; btn.style.borderColor = 'var(--green)'; btn.style.color = 'var(--green)'; }
+        mergeAndRender();
+        return;
+      }
+    }
+  } catch(e) {}
+
+  // Fallback: just re-fetch from Railway cache
+  try {
+    const r = await fetch('/api/vici?date='+date);
+    const d = await r.json();
+    if (Array.isArray(d) && d.length > 0) {
+      viciData = d;
+      viciLastTs = new Date();
+      setDot(document.getElementById('viciDot'), 'ok');
+      mergeAndRender();
+    }
+  } catch(e) {}
 }
 
 async function parseViciReport(text) {
@@ -1095,7 +1154,12 @@ function togglePause() {
   btn.className    = paused ? 'btn btn-primary' : 'btn btn-paused';
 }
 
-function forceRefresh() { sfSecsLeft = 0; viciSecsLeft = 0; }
+function forceRefresh() {
+  sfSecsLeft = 0;
+  viciSecsLeft = 0;
+  // Also trigger sync from VICIdial tab if open
+  syncDialsFromVici();
+}
 
 function togglePtsEditor() {
   const el = document.getElementById('ptsEditor');
@@ -1125,6 +1189,18 @@ function applyPts() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+function toggleTV() {
+  const isTV = document.body.classList.toggle('tv-mode');
+  localStorage.setItem('lb_tv', isTV ? '1' : '0');
+  if (isTV) {
+    document.getElementById('btnTV').textContent = '✖ Exit TV';
+    document.documentElement.requestFullscreen?.();
+  } else {
+    document.getElementById('btnTV').textContent = '📺 TV mode';
+    document.exitFullscreen?.();
+  }
+}
+
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light-mode');
   document.getElementById('btnTheme').textContent = isLight ? 'Dark mode' : 'Light mode';
@@ -1143,4 +1219,4 @@ setInterval(tick, 1000);
 tick(); // fires fetchSF and fetchVici immediately (secsLeft=0)
 </script>
 </body>
-</html> 
+</html>
