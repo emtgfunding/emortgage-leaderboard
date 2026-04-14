@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "express": "^4.22.1",
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "redis": "^5.12.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
